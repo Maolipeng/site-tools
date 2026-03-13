@@ -1,0 +1,4 @@
+interface:
+  display_name: "SiteCtl Ops"
+  short_description: "Manage sitectl deployments"
+  default_prompt: "Use sitectl to inspect, change, verify, or recover a Linux site deployment, then summarize the actions and outcome."

@@ -1,0 +1,21 @@
+{
+  "allowed_commands": [
+    "sitectl reload",
+    "sitectl renew*"
+  ],
+  "denied_commands": [],
+  "allowed_domains": [],
+  "denied_domains": [],
+  "default_max_priority": "medium",
+  "require_dry_run_before_apply": true,
+  "command_rules": {
+    "sitectl reload": {
+      "max_priority": "low",
+      "require_dry_run": true
+    },
+    "sitectl renew*": {
+      "max_priority": "medium",
+      "require_dry_run": true
+    }
+  }
+}
