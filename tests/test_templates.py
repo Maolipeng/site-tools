@@ -44,6 +44,19 @@ class TemplateRenderingTestCase(unittest.TestCase):
         self.assertIn("server_name api.example.com www.example.com;", rendered)
         self.assertIn("proxy_pass http://127.0.0.1:8080;", rendered)
 
+    def test_proxy_template_supports_ipv6_listen_and_upstream(self) -> None:
+        record = SiteRecord(
+            domain="ipv6.example.com",
+            type=SiteType.PROXY,
+            port=8080,
+            listen_ipv6=True,
+            upstream_host="::1",
+        )
+        rendered = self.service.render_config(record)
+        self.assertIn("listen 80;", rendered)
+        self.assertIn("listen [::]:80;", rendered)
+        self.assertIn("proxy_pass http://[::1]:8080;", rendered)
+
     def test_static_template_contains_spa_try_files(self) -> None:
         record = SiteRecord(domain="www.example.com", type=SiteType.STATIC, root="/srv/www/example")
         rendered = self.service.render_config(record)
@@ -63,6 +76,7 @@ class TemplateRenderingTestCase(unittest.TestCase):
         )
         rendered = self.service.render_config(record)
         self.assertIn("listen 443 ssl;", rendered)
+        self.assertIn("listen 80;", rendered)
         self.assertIn("server_name secure.example.com cdn.example.com;", rendered)
         self.assertIn("ssl_certificate /etc/ssl/certs/origin.pem;", rendered)
         self.assertIn("ssl_certificate_key /etc/ssl/private/origin.key;", rendered)

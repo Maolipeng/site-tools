@@ -18,6 +18,8 @@
 - 支持 `node`、`proxy`、`static`、`systemd` 四类站点
 - 支持 `letsencrypt` 和 `manual` 两种证书模式
 - 支持多域名 `alias`
+- 支持显式 IPv6 监听和 IPv6 upstream 回源
+- `doctor` 支持探测公网 IPv6，并提示 AAAA 记录、IPv6 监听和 HTTPS 配置建议
 - 支持 `create`、`update`、`remove`、`list`、`status`
 - 支持 `reload`、`renew`
 - 支持 `history`、`rollback`
@@ -272,6 +274,14 @@ sitectl cert-verify DOMAIN
 sitectl cert-replace DOMAIN --ssl-cert PATH --ssl-key PATH [--dry-run]
 ```
 
+IPv6 相关常用参数：
+
+- `--listen-ipv6`
+  - 为 Nginx 显式生成 `listen [::]:80;` 和 `listen [::]:443 ssl;`
+- `--upstream-host HOST`
+  - 为 `node`、`proxy`、`systemd` 指定本地回源地址，例如 `127.0.0.1`、`::1`、`localhost`
+- `update` 额外支持 `--no-listen-ipv6`
+
 ## 快速开始
 
 ### 创建一个 Node 站点
@@ -293,6 +303,18 @@ sitectl create \
   --domain api.example.com \
   --type proxy \
   --port 8080 \
+  --email ops@example.com
+```
+
+### 创建一个启用 IPv6 监听并回源到 `::1` 的代理站点
+
+```bash
+sitectl create \
+  --domain ipv6.example.com \
+  --type proxy \
+  --port 8080 \
+  --upstream-host ::1 \
+  --listen-ipv6 \
   --email ops@example.com
 ```
 
@@ -806,14 +828,37 @@ sitectl healthcheck app.example.com --skip-remote
 sitectl doctor
 ```
 
+如果你是在家里电脑或 NAS 上用公网 IPv6 提供服务，可以带上目标域名和计划中的站点参数一起检查：
+
+```bash
+sitectl doctor \
+  --domain home.example.com \
+  --type proxy \
+  --port 8080 \
+  --upstream-host ::1 \
+  --listen-ipv6 \
+  --email ops@example.com
+```
+
 检查项包括：
 
 - `nginx`、`certbot`、`openssl`、`pm2`、`npm` 是否在 `PATH`
+- `ip` 是否在 `PATH`
 - `systemctl`、`journalctl` 是否在 `PATH`
 - `sites-available` / `sites-enabled` 是否存在
 - 状态文件父目录是否可写
 - `nginx.conf` 是否包含 `sites-enabled`
 - 80 / 443 端口是否可绑定
+- IPv6 的 80 / 443 端口是否可绑定
+- 是否检测到公网 IPv6 地址
+
+如果检测到公网 IPv6，`doctor` 会额外提示：
+
+- 可以把域名 AAAA 记录指向该 IPv6
+- 可以为站点启用 `--listen-ipv6`
+- 本地服务如果只监听 `::1`，可以配合 `--upstream-host ::1`
+- 然后用 Let's Encrypt 或手动证书启用 HTTPS
+- 如果传了 `--domain`，还会检查该域名的 AAAA 是否已经解析到本机 IPv6，并给出下一步 `sitectl create` 建议
 
 ### `cert-info`
 

@@ -23,6 +23,8 @@ class SiteRecord:
     domain: str
     type: SiteType
     ssl_mode: SslMode = SslMode.LETSENCRYPT
+    listen_ipv6: bool = False
+    upstream_host: str | None = None
     aliases: list[str] | None = None
     root: str | None = None
     port: int | None = None
@@ -38,6 +40,8 @@ class SiteRecord:
             self.created_at = datetime.now(timezone.utc).isoformat()
         if self.aliases is None:
             self.aliases = []
+        if self.type in {SiteType.NODE, SiteType.PROXY, SiteType.SYSTEMD} and not self.upstream_host:
+            self.upstream_host = "127.0.0.1"
 
     def to_dict(self) -> dict[str, object]:
         payload = asdict(self)
@@ -51,6 +55,8 @@ class SiteRecord:
             domain=str(payload["domain"]),
             type=SiteType(str(payload["type"])),
             ssl_mode=SslMode(str(payload.get("ssl_mode", SslMode.LETSENCRYPT.value))),
+            listen_ipv6=bool(payload.get("listen_ipv6", False)),
+            upstream_host=str(payload["upstream_host"]) if payload.get("upstream_host") is not None else None,
             aliases=[str(item) for item in payload.get("aliases", []) if item is not None],
             root=str(payload["root"]) if payload.get("root") is not None else None,
             port=int(payload["port"]) if payload.get("port") is not None else None,
@@ -68,6 +74,8 @@ class SiteStatus:
     domain: str
     type: str
     ssl_mode: str
+    listen_ipv6: bool
+    upstream_host: str | None
     config_exists: bool
     enabled_exists: bool
     cert_exists: bool
@@ -107,8 +115,17 @@ class DoctorCheck:
 
 
 @dataclass(slots=True)
+class DoctorAdvice:
+    level: str
+    title: str
+    detail: str
+    commands: list[str]
+
+
+@dataclass(slots=True)
 class DoctorReport:
     checks: list[DoctorCheck]
+    advice: list[DoctorAdvice] | None = None
 
 
 @dataclass(slots=True)
@@ -129,6 +146,7 @@ class HealthcheckProbe:
 class HealthcheckReport:
     domain: str
     type: str
+    local_host: str | None
     probes: list[HealthcheckProbe]
 
 

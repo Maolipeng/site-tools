@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import ipaddress
 from pathlib import Path
 
 from sitectl.exceptions import ValidationError
@@ -11,6 +12,9 @@ DOMAIN_PATTERN = re.compile(
     r"^(?=.{1,253}$)(?!-)(?:[a-zA-Z0-9-]{1,63}\.)+[A-Za-z]{2,63}$"
 )
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+HOSTNAME_PATTERN = re.compile(
+    r"^(?=.{1,253}$)(?!-)(?:[a-zA-Z0-9-]{1,63}\.)*[A-Za-z0-9-]{1,63}$"
+)
 
 
 def validate_domain(domain: str) -> str:
@@ -31,6 +35,22 @@ def validate_port(port: int | None) -> int:
     if not 1 <= port <= 65535:
         raise ValidationError(f"Invalid port: {port}")
     return port
+
+
+def validate_upstream_host(host: str | None) -> str:
+    if not host:
+        return "127.0.0.1"
+    candidate = host.strip()
+    if not candidate:
+        raise ValidationError("Invalid upstream host.")
+    try:
+        ipaddress.ip_address(candidate)
+        return candidate
+    except ValueError:
+        pass
+    if HOSTNAME_PATTERN.match(candidate):
+        return candidate.lower()
+    raise ValidationError(f"Invalid upstream host: {host}")
 
 
 def validate_aliases(aliases: list[str] | None, domain: str) -> list[str]:
@@ -97,6 +117,7 @@ def validate_create_options(
     ssl_mode: str | None = None,
     ssl_cert_path: str | None = None,
     ssl_key_path: str | None = None,
+    upstream_host: str | None = None,
 ) -> SiteType:
     normalized_type = SiteType(site_type)
     normalized_domain = validate_domain(domain)
@@ -106,6 +127,7 @@ def validate_create_options(
     if normalized_type is SiteType.NODE:
         validate_node_root(root)
         validate_port(port)
+        validate_upstream_host(upstream_host)
         if not pm2_name:
             raise ValidationError("--pm2-name is required for node sites.")
         if normalized_ssl_mode is SslMode.LETSENCRYPT and not email:
@@ -114,6 +136,7 @@ def validate_create_options(
             validate_email(email)
     elif normalized_type is SiteType.SYSTEMD:
         validate_port(port)
+        validate_upstream_host(upstream_host)
         if not service_name:
             raise ValidationError("--service-name is required for systemd sites.")
         if normalized_ssl_mode is SslMode.LETSENCRYPT and not email:
@@ -122,12 +145,15 @@ def validate_create_options(
             validate_email(email)
     elif normalized_type is SiteType.PROXY:
         validate_port(port)
+        validate_upstream_host(upstream_host)
         if normalized_ssl_mode is SslMode.LETSENCRYPT and not email:
             raise ValidationError("--email is required for proxy sites.")
         if email:
             validate_email(email)
     elif normalized_type is SiteType.STATIC:
         validate_static_root(root)
+        if upstream_host is not None:
+            raise ValidationError("--upstream-host is not applicable to static sites.")
         if normalized_ssl_mode is SslMode.LETSENCRYPT and not email:
             raise ValidationError("--email is required for static sites.")
         if email:

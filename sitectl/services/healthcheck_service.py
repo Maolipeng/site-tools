@@ -5,13 +5,16 @@ import urllib.error
 import urllib.request
 
 from sitectl.models import HealthcheckProbe, HealthcheckReport, SiteRecord
+from sitectl.utils import format_host_for_url
 
 
 class HealthcheckService:
     def tcp_probe(self, host: str, port: int, timeout: float) -> HealthcheckProbe:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.settimeout(timeout)
-            ok = sock.connect_ex((host, port)) == 0
+        try:
+            with socket.create_connection((host, port), timeout=timeout):
+                ok = True
+        except OSError:
+            ok = False
         detail = f"tcp://{host}:{port} reachable" if ok else f"tcp://{host}:{port} unreachable"
         return HealthcheckProbe(name="local_tcp", ok=ok, detail=detail)
 
@@ -41,11 +44,12 @@ class HealthcheckService:
         normalized_path = path if path.startswith("/") else f"/{path}"
 
         if not skip_local and record.port:
-            probes.append(self.tcp_probe("127.0.0.1", record.port, timeout))
+            local_host = record.upstream_host or "127.0.0.1"
+            probes.append(self.tcp_probe(local_host, record.port, timeout))
             probes.append(
                 self.http_probe(
                     "local_http",
-                    f"http://127.0.0.1:{record.port}{normalized_path}",
+                    f"http://{format_host_for_url(local_host)}:{record.port}{normalized_path}",
                     timeout,
                 )
             )
@@ -56,4 +60,9 @@ class HealthcheckService:
             target_url = remote_url or f"https://{record.domain}{normalized_path}"
             probes.append(self.http_probe("remote_https", target_url, timeout))
 
-        return HealthcheckReport(domain=record.domain, type=record.type.value, probes=probes)
+        return HealthcheckReport(
+            domain=record.domain,
+            type=record.type.value,
+            local_host=record.upstream_host if record.port else None,
+            probes=probes,
+        )

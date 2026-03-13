@@ -10,6 +10,8 @@ def run(args: argparse.Namespace, site_service: SiteService) -> int:
     print(f"domain: {status.domain}")
     print(f"type: {status.type}")
     print(f"ssl_mode: {status.ssl_mode}")
+    print(f"listen_ipv6: {status.listen_ipv6}")
+    print(f"upstream_host: {status.upstream_host}")
     print(f"nginx_config_exists: {status.config_exists}")
     print(f"enabled_symlink_exists: {status.enabled_exists}")
     print(f"certificate_exists: {status.cert_exists}")

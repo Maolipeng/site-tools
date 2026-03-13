@@ -25,7 +25,7 @@ from sitectl.services.pm2_service import PM2Service
 from sitectl.services.status_service import StatusService
 from sitectl.services.systemd_service import SystemdService
 from sitectl.utils import atomic_write_json, load_json
-from sitectl.validators import validate_aliases, validate_create_options, validate_domain, validate_ssl_mode
+from sitectl.validators import validate_aliases, validate_create_options, validate_domain, validate_ssl_mode, validate_upstream_host
 
 
 LOGGER = get_logger(__name__)
@@ -86,14 +86,15 @@ class SiteService:
         port: int | None,
         pm2_name: str | None,
         service_name: str | None,
-    ) -> tuple[str | None, int | None, str | None, str | None]:
+        upstream_host: str | None,
+    ) -> tuple[str | None, int | None, str | None, str | None, str | None]:
         if site_type is SiteType.NODE:
-            return root, port, pm2_name, None
+            return root, port, pm2_name, None, validate_upstream_host(upstream_host)
         if site_type is SiteType.SYSTEMD:
-            return None, port, None, service_name
+            return None, port, None, service_name, validate_upstream_host(upstream_host)
         if site_type is SiteType.PROXY:
-            return None, port, None, None
-        return root, None, None, None
+            return None, port, None, None, validate_upstream_host(upstream_host)
+        return root, None, None, None, None
 
     def _build_record(
         self,
@@ -106,6 +107,8 @@ class SiteService:
         service_name: str | None,
         email: str | None,
         aliases: list[str] | None,
+        listen_ipv6: bool,
+        upstream_host: str | None,
         ssl_mode: str | None,
         ssl_cert_path: str | None,
         ssl_key_path: str | None,
@@ -123,21 +126,25 @@ class SiteService:
             service_name=service_name,
             email=email,
             aliases=normalized_aliases,
+            upstream_host=upstream_host,
             ssl_mode=normalized_ssl_mode.value,
             ssl_cert_path=ssl_cert_path,
             ssl_key_path=ssl_key_path,
         )
-        root, port, pm2_name, service_name = self._normalize_fields(
+        root, port, pm2_name, service_name, upstream_host = self._normalize_fields(
             site_type=normalized_type,
             root=str(Path(root)) if root else None,
             port=port,
             pm2_name=pm2_name,
             service_name=service_name,
+            upstream_host=upstream_host,
         )
         return SiteRecord(
             domain=normalized_domain,
             type=normalized_type,
             ssl_mode=normalized_ssl_mode,
+            listen_ipv6=listen_ipv6,
+            upstream_host=upstream_host,
             aliases=normalized_aliases,
             root=root,
             port=port,
@@ -259,6 +266,12 @@ class SiteService:
                 actions.append(f"refuse to overwrite existing Nginx config at {config_path}")
         if record.aliases:
             actions.append(f"configure server aliases: {', '.join(record.aliases)}")
+        if record.listen_ipv6:
+            actions.append("add explicit IPv6 listen directives for Nginx")
+            if record.ssl_mode is SslMode.LETSENCRYPT:
+                actions.append(f"verify AAAA for {record.domain} points at this host before requesting Let's Encrypt over IPv6")
+        if record.upstream_host and record.type in {SiteType.NODE, SiteType.PROXY, SiteType.SYSTEMD}:
+            actions.append(f"use upstream host {record.upstream_host} for local proxy and health checks")
         if record.ssl_mode is SslMode.MANUAL and record.ssl_cert_path and record.ssl_key_path:
             actions.append(f"use manual TLS certificate {record.ssl_cert_path}")
             actions.append(f"use manual TLS private key {record.ssl_key_path}")
@@ -295,6 +308,28 @@ class SiteService:
             actions.append(f"stop old systemd service {previous_record.service_name} after successful update")
         return self._render_preview(title=f"{action.title()} site {record.domain}", actions=actions, record=record)
 
+    def _warn_if_ipv6_https_not_ready(self, record: SiteRecord) -> None:
+        if not self.doctor_service:
+            return
+        if record.ssl_mode is not SslMode.LETSENCRYPT or not record.listen_ipv6:
+            return
+        report = self.doctor_service.run(
+            domain=record.domain,
+            site_type=record.type.value,
+            port=record.port,
+            upstream_host=record.upstream_host,
+            listen_ipv6=record.listen_ipv6,
+            email=record.email,
+            ssl_mode=record.ssl_mode.value,
+        )
+        dns_check_name = f"dns:aaaa:{record.domain}"
+        for check in report.checks:
+            if check.name in {"network:global-ipv6", dns_check_name} and not check.ok:
+                LOGGER.warning("IPv6 HTTPS readiness warning for %s: %s", record.domain, check.detail)
+        for item in report.advice or []:
+            if item.level in {"warning", "critical"}:
+                LOGGER.warning("IPv6 HTTPS advice for %s: %s", record.domain, item.detail)
+
     def create_site(
         self,
         *,
@@ -306,6 +341,8 @@ class SiteService:
         service_name: str | None,
         email: str | None,
         aliases: list[str] | None = None,
+        listen_ipv6: bool = False,
+        upstream_host: str | None = None,
         ssl_mode: str | None = None,
         ssl_cert_path: str | None = None,
         ssl_key_path: str | None = None,
@@ -327,6 +364,8 @@ class SiteService:
             service_name=service_name,
             email=email,
             aliases=aliases,
+            listen_ipv6=listen_ipv6,
+            upstream_host=upstream_host,
             ssl_mode=ssl_mode,
             ssl_cert_path=ssl_cert_path,
             ssl_key_path=ssl_key_path,
@@ -358,6 +397,7 @@ class SiteService:
             self.nginx_service.validate_nginx_config()
             self.nginx_service.reload_nginx(validate_first=False)
             if record.ssl_mode is SslMode.LETSENCRYPT:
+                self._warn_if_ipv6_https_not_ready(record)
                 self.certbot_service.request_certificate([normalized_domain, *(record.aliases or [])], email or "")
 
             records = [item for item in self._load_records() if item.domain != normalized_domain]
@@ -388,6 +428,8 @@ class SiteService:
         email: str | None,
         aliases: list[str] | None = None,
         clear_aliases: bool = False,
+        listen_ipv6: bool | None = None,
+        upstream_host: str | None = None,
         ssl_mode: str | None = None,
         ssl_cert_path: str | None = None,
         ssl_key_path: str | None = None,
@@ -406,6 +448,8 @@ class SiteService:
         merged_service_name = service_name if service_name is not None else existing_record.service_name
         merged_email = email if email is not None else existing_record.email
         merged_aliases = [] if clear_aliases else (aliases if aliases is not None else existing_record.aliases)
+        merged_listen_ipv6 = listen_ipv6 if listen_ipv6 is not None else existing_record.listen_ipv6
+        merged_upstream_host = upstream_host if upstream_host is not None else existing_record.upstream_host
         merged_ssl_cert_path = ssl_cert_path if ssl_cert_path is not None else existing_record.ssl_cert_path
         merged_ssl_key_path = ssl_key_path if ssl_key_path is not None else existing_record.ssl_key_path
         record = self._build_record(
@@ -417,6 +461,8 @@ class SiteService:
             service_name=merged_service_name,
             email=merged_email,
             aliases=merged_aliases,
+            listen_ipv6=merged_listen_ipv6,
+            upstream_host=merged_upstream_host,
             ssl_mode=merged_ssl_mode,
             ssl_cert_path=merged_ssl_cert_path,
             ssl_key_path=merged_ssl_key_path,
@@ -463,6 +509,7 @@ class SiteService:
             self.nginx_service.validate_nginx_config()
             self.nginx_service.reload_nginx(validate_first=False)
             if record.ssl_mode is SslMode.LETSENCRYPT:
+                self._warn_if_ipv6_https_not_ready(record)
                 self.certbot_service.request_certificate([normalized_domain, *(record.aliases or [])], record.email or "")
 
             records = [item for item in self._load_records() if item.domain != normalized_domain]
@@ -581,8 +628,27 @@ class SiteService:
             return self.log_service.read_systemd_log(record.service_name, lines)
         raise SiteCtlError(f"Unsupported log kind: {kind}")
 
-    def run_doctor(self) -> DoctorReport:
-        return self.doctor_service.run()
+    def run_doctor(
+        self,
+        *,
+        domain: str | None = None,
+        site_type: str | None = None,
+        port: int | None = None,
+        upstream_host: str | None = None,
+        listen_ipv6: bool = False,
+        email: str | None = None,
+        ssl_mode: str = "letsencrypt",
+    ) -> DoctorReport:
+        normalized_domain = validate_domain(domain) if domain else None
+        return self.doctor_service.run(
+            domain=normalized_domain,
+            site_type=site_type,
+            port=port,
+            upstream_host=upstream_host,
+            listen_ipv6=listen_ipv6,
+            email=email,
+            ssl_mode=ssl_mode,
+        )
 
     def get_certificate_info(self, domain: str) -> CertificateInfo:
         normalized_domain = validate_domain(domain)
@@ -624,6 +690,8 @@ class SiteService:
             service_name=None,
             email=None,
             aliases=None,
+            listen_ipv6=None,
+            upstream_host=None,
             ssl_mode=SslMode.MANUAL.value,
             ssl_cert_path=ssl_cert_path,
             ssl_key_path=ssl_key_path,

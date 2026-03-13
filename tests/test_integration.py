@@ -31,7 +31,8 @@ class FakeSystemService:
         self.systemd_services: set[str] = set()
         self.fail_pm2_delete: set[str] = set()
         self.fail_commands: dict[tuple[str, ...], str] = {}
-        self.available_commands = {"nginx", "certbot", "pm2", "npm", "systemctl", "journalctl", "openssl"}
+        self.global_ipv6_addresses = ["2606:4700:4700::1111"]
+        self.available_commands = {"nginx", "certbot", "pm2", "npm", "systemctl", "journalctl", "openssl", "ip"}
 
     def command_exists(self, command: str) -> bool:
         return command in self.available_commands
@@ -90,6 +91,10 @@ class FakeSystemService:
             if service_name not in self.systemd_services:
                 return subprocess.CompletedProcess(command, 1, stdout="", stderr="unit not found")
             return subprocess.CompletedProcess(command, 0, stdout=f"{service_name}: log1\n{service_name}: log2", stderr="")
+
+        if command == ["ip", "-6", "addr", "show", "scope", "global"]:
+            stdout = "\n".join(f"    inet6 {address}/64 scope global dynamic" for address in self.global_ipv6_addresses)
+            return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
 
         if command[:3] == ["openssl", "x509", "-in"]:
             cert_path = Path(command[3])
@@ -228,6 +233,34 @@ class SiteServiceIntegrationTestCase(unittest.TestCase):
         self.assertEqual(backups[0].read_text(encoding="utf-8"), "old config")
         self.assertIn("proxy_pass http://127.0.0.1:8080;", original_path.read_text(encoding="utf-8"))
 
+    def test_create_proxy_site_supports_ipv6_listen_and_upstream_host(self) -> None:
+        record = self.site_service.create_site(
+            domain="ipv6.example.com",
+            site_type="proxy",
+            root=None,
+            port=8080,
+            pm2_name=None,
+            service_name=None,
+            email="ops@example.com",
+            aliases=None,
+            listen_ipv6=True,
+            upstream_host="::1",
+            force=False,
+        )
+
+        config_text = (self.config.nginx_available_dir / "ipv6.example.com").read_text(encoding="utf-8")
+        state_payload = json.loads(self.config.state_file.read_text(encoding="utf-8"))
+        status = self.site_service.get_status("ipv6.example.com")
+
+        self.assertTrue(record.listen_ipv6)
+        self.assertEqual(record.upstream_host, "::1")
+        self.assertIn("listen [::]:80;", config_text)
+        self.assertIn("proxy_pass http://[::1]:8080;", config_text)
+        self.assertTrue(state_payload["sites"][0]["listen_ipv6"])
+        self.assertEqual(state_payload["sites"][0]["upstream_host"], "::1")
+        self.assertTrue(status.listen_ipv6)
+        self.assertEqual(status.upstream_host, "::1")
+
     def test_create_node_site_runs_npm_build_and_pm2_start(self) -> None:
         app_root = Path(self.temp_dir.name) / "node-app"
         app_root.mkdir(parents=True, exist_ok=True)
@@ -350,6 +383,27 @@ class SiteServiceIntegrationTestCase(unittest.TestCase):
         self.assertFalse(self.config.nginx_available_dir.exists())
         self.assertFalse(self.config.state_file.exists())
         self.assertEqual(self.system.commands, [])
+
+    def test_create_dry_run_ipv6_letsencrypt_mentions_aaaa_readiness(self) -> None:
+        result = self.site_service.create_site(
+            domain="ipv6.example.com",
+            site_type="proxy",
+            root=None,
+            port=8080,
+            pm2_name=None,
+            service_name=None,
+            email="ops@example.com",
+            aliases=None,
+            listen_ipv6=True,
+            upstream_host="::1",
+            dry_run=True,
+        )
+
+        self.assertIn("add explicit IPv6 listen directives for Nginx", result.actions)
+        self.assertIn(
+            "verify AAAA for ipv6.example.com points at this host before requesting Let's Encrypt over IPv6",
+            result.actions,
+        )
 
     def test_create_rolls_back_nginx_and_state_when_certbot_fails(self) -> None:
         original_path = self.config.nginx_available_dir / "api.example.com"
@@ -491,6 +545,8 @@ class SiteServiceIntegrationTestCase(unittest.TestCase):
 
         self.assertEqual(status.domain, "status.example.com")
         self.assertEqual(status.type, "node")
+        self.assertFalse(status.listen_ipv6)
+        self.assertEqual(status.upstream_host, "127.0.0.1")
         self.assertTrue(status.config_exists)
         self.assertTrue(status.enabled_exists)
         self.assertTrue(status.cert_exists)
@@ -866,10 +922,34 @@ class SiteServiceIntegrationTestCase(unittest.TestCase):
         names = {check.name for check in report.checks}
         self.assertIn("command:nginx", names)
         self.assertIn("command:certbot", names)
+        self.assertIn("command:ip", names)
         self.assertIn("command:systemctl", names)
         self.assertIn("command:journalctl", names)
         self.assertIn("nginx:include-sites-enabled", names)
+        self.assertIn("network:global-ipv6", names)
+        self.assertIn("port6:80", names)
         self.assertIn("path:state-parent", names)
+        self.assertTrue(report.advice)
+        self.assertIn("AAAA", report.advice[0].detail)
+
+    def test_run_doctor_with_domain_reports_aaaa_readiness_advice(self) -> None:
+        with patch.object(self.doctor_service, "_resolve_domain_aaaa", return_value=[]):
+            report = self.site_service.run_doctor(
+                domain="home.example.com",
+                site_type="proxy",
+                port=8080,
+                upstream_host="::1",
+                listen_ipv6=True,
+                email="ops@example.com",
+                ssl_mode="letsencrypt",
+            )
+
+        names = {check.name for check in report.checks}
+        self.assertIn("dns:aaaa:home.example.com", names)
+        self.assertTrue(report.advice)
+        aaa_advice = next(item for item in report.advice if item.title == "AAAA record still needs setup")
+        self.assertIn("home.example.com", aaa_advice.detail)
+        self.assertTrue(any("--listen-ipv6" in command for command in aaa_advice.commands))
 
     def test_export_and_import_round_trip(self) -> None:
         self.site_service.create_site(

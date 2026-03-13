@@ -26,6 +26,8 @@ def run(args: argparse.Namespace, site_service: SiteService) -> int:
         email=args.email,
         aliases=args.alias,
         clear_aliases=args.clear_aliases,
+        listen_ipv6=args.listen_ipv6,
+        upstream_host=args.upstream_host,
         ssl_mode=args.ssl_mode,
         ssl_cert_path=args.ssl_cert,
         ssl_key_path=args.ssl_key,

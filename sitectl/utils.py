@@ -42,9 +42,15 @@ def load_json(path: Path) -> dict[str, Any]:
 
 
 def is_port_open(host: str, port: int, timeout: float = 1.0) -> bool:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.settimeout(timeout)
-        return sock.connect_ex((host, port)) == 0
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def format_host_for_url(host: str) -> str:
+    return f"[{host}]" if ":" in host and not host.startswith("[") else host
 
 
 def read_text(path: Path) -> str:
@@ -54,4 +60,3 @@ def read_text(path: Path) -> str:
 def backup_suffix(timestamp: str) -> str:
     normalized = timestamp.replace(":", "").replace("-", "")
     return f".bak.{normalized}"
-

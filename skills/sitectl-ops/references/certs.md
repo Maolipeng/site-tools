@@ -24,6 +24,12 @@ Use this reference when the task is about TLS mode selection, certificate inspec
 
 ## Recommended workflows
 
+### IPv6 + HTTPS readiness
+
+1. `sitectl doctor --domain DOMAIN --type proxy --port PORT --upstream-host ::1 --listen-ipv6 --email ops@example.com`
+2. Confirm the reported AAAA record points at the host before assuming Let's Encrypt over IPv6 will succeed
+3. Then run the normal `create` or `update` flow
+
 ### Inspect a certificate
 
 1. `sitectl cert-info DOMAIN`
@@ -46,3 +52,4 @@ Use this reference when the task is about TLS mode selection, certificate inspec
 - `renew` does not apply to `manual` sites.
 - `cert-replace` only applies to `manual` sites.
 - `cert-verify` requires `openssl`.
+- For `letsencrypt` plus `--listen-ipv6`, DNS readiness matters more because the host may be reachable over IPv6 before IPv4 is configured.

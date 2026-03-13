@@ -18,6 +18,7 @@ Then branch by runtime:
 ## Global environment checks
 
 - `sitectl doctor`
+- `sitectl doctor --domain DOMAIN --type proxy --port PORT --upstream-host ::1 --listen-ipv6`
 - `sitectl reload --dry-run`
 
 ## Certificate-specific checks
@@ -32,3 +33,12 @@ Then branch by runtime:
 2. `sitectl rollback DOMAIN --backup BACKUP --dry-run`
 3. `sitectl rollback DOMAIN --backup BACKUP`
 4. `sitectl healthcheck DOMAIN`
+
+## IPv6-specific triage
+
+Use this branch when the user is exposing a home machine, NAS, or other public IPv6 endpoint:
+
+1. `sitectl doctor --domain DOMAIN --type proxy --port PORT --upstream-host ::1 --listen-ipv6 --email ...`
+2. Confirm `network:global-ipv6` is healthy
+3. Confirm `dns:aaaa:DOMAIN` points at the same host
+4. Only then treat `letsencrypt` issuance or remote HTTPS failures as an application/Nginx problem

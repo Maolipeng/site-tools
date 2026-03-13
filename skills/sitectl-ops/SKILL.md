@@ -1,6 +1,6 @@
 ---
 name: "sitectl-ops"
-description: "Use when the user wants to manage Linux site deployments with sitectl, including creating or updating node/proxy/static/systemd sites, checking status and logs, running health checks, managing Let's Encrypt or manual certificates, reloading nginx, exporting/importing configs, and rolling back changes."
+description: "Use when the user wants to manage Linux site deployments with sitectl, including creating or updating node/proxy/static/systemd sites, checking status and logs, running health checks, managing Let's Encrypt or manual certificates, handling IPv6 and AAAA readiness, reloading nginx, exporting/importing configs, and rolling back changes."
 ---
 
 # SiteCtl Ops Skill
@@ -10,6 +10,7 @@ description: "Use when the user wants to manage Linux site deployments with site
 - Create, update, remove, list, reload, or inspect `sitectl` sites.
 - Manage Node/PM2, reverse-proxy, static, or existing systemd-backed sites.
 - Check deployment health, Nginx status, logs, or environment readiness.
+- Prepare IPv6-enabled home-server or NAS deployments, including AAAA readiness and HTTPS suggestions.
 - Inspect, verify, warn on, renew, or replace certificates.
 - Export/import site bundles or roll back to a previous backup.
 
@@ -18,6 +19,7 @@ description: "Use when the user wants to manage Linux site deployments with site
 - Prefer running from the `sitectl` project root when the package is not installed globally.
 - If `sitectl` is not on `PATH`, use `python -m sitectl ...` or the venv launcher path.
 - For mutating commands that support `--dry-run`, use it first when the change is risky, broad, or ambiguous.
+- When the user mentions a home machine, NAS, or public IPv6 instead of a traditional server, prefer `doctor --domain ... --listen-ipv6 ...` before issuing create/update guidance.
 
 ## Prefer bundled scripts
 
@@ -35,6 +37,7 @@ Use the bundled scripts before hand-writing command sequences:
   - `scripts/site_json.py cert-verify DOMAIN`
   - `scripts/site_json.py logs DOMAIN --kind error --lines 200`
   - `scripts/site_json.py doctor`
+  - `scripts/site_json.py doctor --domain home.example.com --type proxy --port 8080 --upstream-host ::1 --listen-ipv6 --email ops@example.com`
   - `scripts/site_json.py preview-create ...`
   - `scripts/site_json.py preview-update DOMAIN ...`
   - `scripts/site_json.py preview-remove DOMAIN`
@@ -92,8 +95,10 @@ These scripts auto-resolve `sitectl` from `PATH`, the repo venv, or `python3 -m 
 
 1. Identify the target site and current state.
    - Use `scripts/site_json.py list`, `scripts/site_status.sh DOMAIN`, `scripts/site_json.py cert-info DOMAIN`, or `scripts/site_json.py doctor` as needed.
+   - For IPv6-facing or home-network deployments, prefer `scripts/site_json.py doctor --domain ... --type ... --port ... --upstream-host ... --listen-ipv6` first.
 2. Choose the narrowest `sitectl` command that matches the request.
 3. For create/update/remove/import/rollback/reload/renew/cert-replace, prefer a dry run before the live command when it adds safety.
+   - If the plan includes `--listen-ipv6` and `letsencrypt`, check AAAA readiness before treating certificate issuance as safe.
 4. After a live change, verify the result.
    - Use `scripts/site_status.sh DOMAIN`
    - Use `scripts/site_healthcheck.sh DOMAIN`
@@ -157,12 +162,16 @@ Read only the reference file that matches the task:
 - `systemd` support manages an existing service; it does not generate unit files.
 - `node` sites require a valid `package.json` in `--root`.
 - `static` sites require an existing directory in `--root`.
+- Use `--listen-ipv6` when the site should emit explicit `listen [::]` directives.
+- Use `--upstream-host ::1` or another host when the app is not bound to `127.0.0.1`.
+- `doctor --domain ...` can check whether AAAA already points at the host and suggest the next `sitectl create` shape.
 
 ## High-signal examples
 
 ```bash
 bash scripts/site_safe_create.sh --domain app.example.com --type node --root /srv/app --port 3000 --pm2-name app-example --email ops@example.com
 bash scripts/site_safe_create.sh --domain app.example.com --type node --root /srv/app --port 3000 --pm2-name app-example --email ops@example.com --apply
+bash scripts/site_safe_create.sh --domain ipv6.example.com --type proxy --port 8080 --upstream-host ::1 --listen-ipv6 --email ops@example.com --apply
 ```
 
 ```bash

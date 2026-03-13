@@ -116,6 +116,13 @@ def build_parser() -> argparse.ArgumentParser:
     logs_parser.set_defaults(command_name="logs")
 
     doctor_parser = subparsers.add_parser("doctor", help="Return doctor report as JSON.")
+    doctor_parser.add_argument("--domain")
+    doctor_parser.add_argument("--type", choices=["node", "proxy", "static", "systemd"])
+    doctor_parser.add_argument("--port", type=int)
+    doctor_parser.add_argument("--upstream-host")
+    doctor_parser.add_argument("--listen-ipv6", action="store_true")
+    doctor_parser.add_argument("--email")
+    doctor_parser.add_argument("--ssl-mode", choices=["letsencrypt", "manual"], default="letsencrypt")
     doctor_parser.set_defaults(command_name="doctor")
 
     preview_create_parser = subparsers.add_parser("preview-create", help="Return a create dry-run preview as JSON.")
@@ -125,6 +132,8 @@ def build_parser() -> argparse.ArgumentParser:
     preview_create_parser.add_argument("--port", type=int)
     preview_create_parser.add_argument("--pm2-name")
     preview_create_parser.add_argument("--service-name")
+    preview_create_parser.add_argument("--listen-ipv6", action="store_true")
+    preview_create_parser.add_argument("--upstream-host")
     preview_create_parser.add_argument("--alias", action="append", default=[])
     preview_create_parser.add_argument("--ssl-mode", choices=["letsencrypt", "manual"], default="letsencrypt")
     preview_create_parser.add_argument("--ssl-cert")
@@ -140,8 +149,12 @@ def build_parser() -> argparse.ArgumentParser:
     preview_update_parser.add_argument("--port", type=int)
     preview_update_parser.add_argument("--pm2-name")
     preview_update_parser.add_argument("--service-name")
+    preview_update_parser.add_argument("--listen-ipv6", dest="listen_ipv6", action="store_true")
+    preview_update_parser.add_argument("--no-listen-ipv6", dest="listen_ipv6", action="store_false")
+    preview_update_parser.add_argument("--upstream-host")
     preview_update_parser.add_argument("--alias", action="append")
     preview_update_parser.add_argument("--clear-aliases", action="store_true")
+    preview_update_parser.set_defaults(listen_ipv6=None)
     preview_update_parser.add_argument("--ssl-mode", choices=["letsencrypt", "manual"])
     preview_update_parser.add_argument("--ssl-cert")
     preview_update_parser.add_argument("--ssl-key")
@@ -182,6 +195,8 @@ def build_parser() -> argparse.ArgumentParser:
     apply_create_parser.add_argument("--port", type=int)
     apply_create_parser.add_argument("--pm2-name")
     apply_create_parser.add_argument("--service-name")
+    apply_create_parser.add_argument("--listen-ipv6", action="store_true")
+    apply_create_parser.add_argument("--upstream-host")
     apply_create_parser.add_argument("--alias", action="append", default=[])
     apply_create_parser.add_argument("--ssl-mode", choices=["letsencrypt", "manual"], default="letsencrypt")
     apply_create_parser.add_argument("--ssl-cert")
@@ -197,8 +212,12 @@ def build_parser() -> argparse.ArgumentParser:
     apply_update_parser.add_argument("--port", type=int)
     apply_update_parser.add_argument("--pm2-name")
     apply_update_parser.add_argument("--service-name")
+    apply_update_parser.add_argument("--listen-ipv6", dest="listen_ipv6", action="store_true")
+    apply_update_parser.add_argument("--no-listen-ipv6", dest="listen_ipv6", action="store_false")
+    apply_update_parser.add_argument("--upstream-host")
     apply_update_parser.add_argument("--alias", action="append")
     apply_update_parser.add_argument("--clear-aliases", action="store_true")
+    apply_update_parser.set_defaults(listen_ipv6=None)
     apply_update_parser.add_argument("--ssl-mode", choices=["letsencrypt", "manual"])
     apply_update_parser.add_argument("--ssl-cert")
     apply_update_parser.add_argument("--ssl-key")
@@ -294,6 +313,8 @@ def main(argv: list[str] | None = None) -> int:
                 service_name=args.service_name,
                 email=args.email,
                 aliases=args.alias,
+                listen_ipv6=args.listen_ipv6,
+                upstream_host=args.upstream_host,
                 ssl_mode=args.ssl_mode,
                 ssl_cert_path=args.ssl_cert,
                 ssl_key_path=args.ssl_key,
@@ -311,6 +332,8 @@ def main(argv: list[str] | None = None) -> int:
                 email=args.email,
                 aliases=args.alias,
                 clear_aliases=args.clear_aliases,
+                listen_ipv6=args.listen_ipv6,
+                upstream_host=args.upstream_host,
                 ssl_mode=args.ssl_mode,
                 ssl_cert_path=args.ssl_cert,
                 ssl_key_path=args.ssl_key,
@@ -346,7 +369,15 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command_name == "apply-history":
             payload = site_service.list_history(args.domain)
         else:
-            payload = site_service.run_doctor()
+            payload = site_service.run_doctor(
+                domain=args.domain,
+                site_type=args.type,
+                port=args.port,
+                upstream_host=args.upstream_host,
+                listen_ipv6=args.listen_ipv6,
+                email=args.email,
+                ssl_mode=args.ssl_mode,
+            )
     except SiteCtlError as exc:
         print(
             json.dumps(

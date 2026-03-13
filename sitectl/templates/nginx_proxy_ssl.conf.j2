@@ -1,11 +1,11 @@
 server {
-    listen 80;
+{{ listen_http_directives }}
     server_name {{ server_names }};
     return 301 https://$host$request_uri;
 }
 
 server {
-    listen 443 ssl;
+{{ listen_https_directives }}
     http2 on;
     server_name {{ server_names }};
 
@@ -16,7 +16,7 @@ server {
     error_log {{ error_log }};
 
     location / {
-        proxy_pass http://127.0.0.1:{{ port }};
+        proxy_pass {{ upstream_url }};
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -26,4 +26,3 @@ server {
         proxy_set_header Connection "upgrade";
     }
 }
-

@@ -44,17 +44,28 @@ class NginxService:
     def render_config(self, record: SiteRecord) -> str:
         template_path = self.ssl_template_path(record.type) if record.ssl_mode is SslMode.MANUAL else self.template_path(record.type)
         template = read_text(template_path)
+        upstream_host = record.upstream_host or "127.0.0.1"
+        upstream_address = f"[{upstream_host}]" if ":" in upstream_host and not upstream_host.startswith("[") else upstream_host
         context = {
             "domain": record.domain,
             "server_names": " ".join([record.domain, *(record.aliases or [])]),
+            "listen_http_directives": self._listen_directives(80, ipv6=record.listen_ipv6),
+            "listen_https_directives": self._listen_directives(443, ssl=True, ipv6=record.listen_ipv6),
             "port": record.port or "",
             "root": record.root or "",
+            "upstream_url": f"http://{upstream_address}:{record.port}" if record.port else "",
             "ssl_cert_path": record.ssl_cert_path or "",
             "ssl_key_path": record.ssl_key_path or "",
             "access_log": self.config.log_dir / f"{record.domain}.access.log",
             "error_log": self.config.log_dir / f"{record.domain}.error.log",
         }
         return render_template(template, context)
+
+    def _listen_directives(self, port: int, *, ssl: bool = False, ipv6: bool = False) -> str:
+        directives = [f"    listen {port}{' ssl' if ssl else ''};"]
+        if ipv6:
+            directives.append(f"    listen [::]:{port}{' ssl' if ssl else ''};")
+        return "\n".join(directives)
 
     def write_config(
         self,

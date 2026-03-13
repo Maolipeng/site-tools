@@ -27,13 +27,15 @@ class StatusService:
         port_open = False
         site_type = record.type.value if record else "unknown"
         ssl_mode = record.ssl_mode.value if record else SslMode.LETSENCRYPT.value
+        listen_ipv6 = record.listen_ipv6 if record else False
+        upstream_host = record.upstream_host if record else None
 
         if record and record.type.value == "node" and record.pm2_name:
             pm2_exists = self.pm2_service.pm2_process_exists(record.pm2_name)
         if record and record.type.value == "systemd" and record.service_name:
             systemd_active = self.systemd_service.is_active(record.service_name)
-        if record and record.port:
-            port_open = is_port_open("127.0.0.1", record.port)
+        if record and record.port and record.upstream_host:
+            port_open = is_port_open(record.upstream_host, record.port)
 
         if record and record.ssl_mode is SslMode.MANUAL:
             cert_exists = bool(record.ssl_cert_path and record.ssl_key_path) and self._manual_cert_exists(record)
@@ -46,6 +48,8 @@ class StatusService:
             domain=domain,
             type=site_type,
             ssl_mode=ssl_mode,
+            listen_ipv6=listen_ipv6,
+            upstream_host=upstream_host,
             config_exists=config_exists,
             enabled_exists=enabled_exists,
             cert_exists=cert_exists,

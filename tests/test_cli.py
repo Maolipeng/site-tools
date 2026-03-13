@@ -65,6 +65,30 @@ class CliTestCase(unittest.TestCase):
         args = parser.parse_args(["doctor"])
         self.assertEqual(args.command, "doctor")
 
+    def test_build_parser_parses_doctor_ipv6_hint_arguments(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(
+            [
+                "doctor",
+                "--domain",
+                "home.example.com",
+                "--type",
+                "proxy",
+                "--port",
+                "8080",
+                "--upstream-host",
+                "::1",
+                "--listen-ipv6",
+                "--email",
+                "ops@example.com",
+            ]
+        )
+        self.assertEqual(args.domain, "home.example.com")
+        self.assertEqual(args.type, "proxy")
+        self.assertEqual(args.port, 8080)
+        self.assertEqual(args.upstream_host, "::1")
+        self.assertTrue(args.listen_ipv6)
+
     def test_build_parser_parses_systemd_create_command(self) -> None:
         parser = build_parser()
         args = parser.parse_args(
@@ -78,12 +102,31 @@ class CliTestCase(unittest.TestCase):
                 "9000",
                 "--service-name",
                 "svc-app",
+                "--listen-ipv6",
+                "--upstream-host",
+                "::1",
                 "--email",
                 "ops@example.com",
             ]
         )
         self.assertEqual(args.type, "systemd")
         self.assertEqual(args.service_name, "svc-app")
+        self.assertTrue(args.listen_ipv6)
+        self.assertEqual(args.upstream_host, "::1")
+
+    def test_build_parser_parses_update_ipv6_flags(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(
+            [
+                "update",
+                "app.example.com",
+                "--listen-ipv6",
+                "--upstream-host",
+                "::1",
+            ]
+        )
+        self.assertTrue(args.listen_ipv6)
+        self.assertEqual(args.upstream_host, "::1")
 
     def test_build_parser_parses_alias_and_export_import_commands(self) -> None:
         parser = build_parser()

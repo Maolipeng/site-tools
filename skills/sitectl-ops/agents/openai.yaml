@@ -1,4 +1,4 @@
 interface:
   display_name: "SiteCtl Ops"
-  short_description: "Manage sitectl deployments"
-  default_prompt: "Use sitectl to inspect, change, verify, or recover a Linux site deployment, then summarize the actions and outcome."
+  short_description: "Manage sitectl deployments, IPv6, and HTTPS readiness"
+  default_prompt: "Use sitectl to inspect, change, verify, or recover a Linux site deployment, including IPv6 and AAAA readiness when relevant, then summarize the actions and outcome."

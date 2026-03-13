@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from sitectl.exceptions import ValidationError
-from sitectl.validators import validate_create_options, validate_domain, validate_email, validate_port
+from sitectl.validators import validate_create_options, validate_domain, validate_email, validate_port, validate_upstream_host
 
 
 class ValidatorsTestCase(unittest.TestCase):
@@ -29,6 +29,15 @@ class ValidatorsTestCase(unittest.TestCase):
     def test_validate_port_rejects_invalid_range(self) -> None:
         with self.assertRaises(ValidationError):
             validate_port(70000)
+
+    def test_validate_upstream_host_accepts_ipv4_ipv6_and_hostname(self) -> None:
+        self.assertEqual(validate_upstream_host("127.0.0.1"), "127.0.0.1")
+        self.assertEqual(validate_upstream_host("::1"), "::1")
+        self.assertEqual(validate_upstream_host("LOCALHOST"), "localhost")
+
+    def test_validate_upstream_host_rejects_invalid_value(self) -> None:
+        with self.assertRaises(ValidationError):
+            validate_upstream_host("http://127.0.0.1")
 
     def test_node_requires_package_json(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -70,8 +79,24 @@ class ValidatorsTestCase(unittest.TestCase):
                 service_name=None,
                 email="ops@example.com",
                 aliases=["www.example.com"],
+                upstream_host="::1",
             )
             self.assertEqual(site_type.value, "node")
+
+    def test_static_rejects_upstream_host(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with self.assertRaises(ValidationError):
+                validate_create_options(
+                    domain="static.example.com",
+                    site_type="static",
+                    root=temp_dir,
+                    port=None,
+                    pm2_name=None,
+                    service_name=None,
+                    email="ops@example.com",
+                    aliases=None,
+                    upstream_host="::1",
+                )
 
     def test_systemd_requires_service_name(self) -> None:
         with self.assertRaises(ValidationError):
