@@ -46,7 +46,7 @@
 ### 本地一键安装
 
 ```bash
-cd /Users/maolipeng/Documents/selfProject/site-tools
+cd /path/to/site-tools
 ./install.sh
 ```
 
@@ -59,7 +59,7 @@ cd /Users/maolipeng/Documents/selfProject/site-tools
 默认命令路径：
 
 ```bash
-/Users/maolipeng/Documents/selfProject/site-tools/.venv/bin/sitectl
+./.venv/bin/sitectl
 ```
 
 常见变体：
@@ -78,33 +78,32 @@ cd /Users/maolipeng/Documents/selfProject/site-tools
 
 ### `curl | bash` 安装
 
-仓库内置了 bootstrap 脚本 [install.remote.sh](/Users/maolipeng/Documents/selfProject/site-tools/install.remote.sh)。
+仓库内置了 bootstrap 脚本 [install.remote.sh](./install.remote.sh)。
 
 通过仓库地址安装：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.remote.sh | \
-  SITECTL_REPO_URL=https://github.com/<owner>/<repo> bash
+curl -fsSL https://raw.githubusercontent.com/Maolipeng/site-tools/main/install.remote.sh | bash
 ```
 
 直接指定源码压缩包：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.remote.sh | \
-  SITECTL_ARCHIVE_URL=https://github.com/<owner>/<repo>/archive/refs/heads/main.tar.gz bash
+curl -fsSL https://raw.githubusercontent.com/Maolipeng/site-tools/main/install.remote.sh | \
+  SITECTL_ARCHIVE_URL=https://github.com/Maolipeng/site-tools/archive/refs/heads/main.tar.gz bash
 ```
 
 向内部安装脚本传参：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.remote.sh | \
-  SITECTL_REPO_URL=https://github.com/<owner>/<repo> bash -s -- --user
+curl -fsSL https://raw.githubusercontent.com/Maolipeng/site-tools/main/install.remote.sh | \
+  SITECTL_REPO_URL=https://github.com/Maolipeng/site-tools bash -s -- --user
 ```
 
 ### 传统安装
 
 ```bash
-git clone <your-repo-url> sitectl
+git clone https://github.com/Maolipeng/site-tools.git sitectl
 cd sitectl
 python3.11 -m venv .venv
 source .venv/bin/activate
@@ -119,7 +118,7 @@ python -m sitectl --help
 
 ## Agent Skill
 
-仓库里已经附带了一个 skill，在 [skills/sitectl-ops/SKILL.md](/Users/maolipeng/Documents/selfProject/site-tools/skills/sitectl-ops/SKILL.md)。
+仓库里已经附带了一个 skill，在 [skills/sitectl-ops/SKILL.md](./skills/sitectl-ops/SKILL.md)。
 
 用途：
 
@@ -130,7 +129,7 @@ python -m sitectl --help
 本地安装到 Codex skills 目录：
 
 ```bash
-bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh
+bash ./install-skill.sh
 ```
 
 默认会链接到：
@@ -148,12 +147,12 @@ $CODEX_HOME/skills/sitectl-ops
 也支持安装到其他兼容 skill 目录：
 
 ```bash
-bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh --target claude
-bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh --target opencode
-bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh --target openclaw
-bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh --target agents
-bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh --target codex --target claude --target opencode --target openclaw
-bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh --target all
+bash ./install-skill.sh --target claude
+bash ./install-skill.sh --target opencode
+bash ./install-skill.sh --target openclaw
+bash ./install-skill.sh --target agents
+bash ./install-skill.sh --target codex --target claude --target opencode --target openclaw
+bash ./install-skill.sh --target all
 ```
 
 默认全局安装目录：
@@ -167,10 +166,10 @@ bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh --target
 也支持项目级安装：
 
 ```bash
-bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh --target claude --scope project
-bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh --target opencode --scope project
-bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh --target openclaw --scope project
-bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh --target agents --scope project
+bash ./install-skill.sh --target claude --scope project
+bash ./install-skill.sh --target opencode --scope project
+bash ./install-skill.sh --target openclaw --scope project
+bash ./install-skill.sh --target agents --scope project
 ```
 
 项目级目录分别是：
@@ -183,57 +182,57 @@ bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh --target
 安装器还支持：
 
 ```bash
-bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh --target opencode --mode copy
-bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh --path /custom/skills
+bash ./install-skill.sh --target opencode --mode copy
+bash ./install-skill.sh --path /custom/skills
 ```
 
 卸载：
 
 ```bash
-bash /Users/maolipeng/Documents/selfProject/site-tools/uninstall-skill.sh
+bash ./uninstall-skill.sh
 ```
 
 也支持按 target 卸载：
 
 ```bash
-bash /Users/maolipeng/Documents/selfProject/site-tools/uninstall-skill.sh --target claude
-bash /Users/maolipeng/Documents/selfProject/site-tools/uninstall-skill.sh --target opencode
-bash /Users/maolipeng/Documents/selfProject/site-tools/uninstall-skill.sh --target openclaw
-bash /Users/maolipeng/Documents/selfProject/site-tools/uninstall-skill.sh --target all
+bash ./uninstall-skill.sh --target claude
+bash ./uninstall-skill.sh --target opencode
+bash ./uninstall-skill.sh --target openclaw
+bash ./uninstall-skill.sh --target all
 ```
 
 skill 内还附带了一组稳定脚本，适合被模型直接调用：
 
 ```bash
-python3 /Users/maolipeng/Documents/selfProject/site-tools/skills/sitectl-ops/scripts/site_json.py list
-python3 /Users/maolipeng/Documents/selfProject/site-tools/skills/sitectl-ops/scripts/site_json.py status app.example.com
-python3 /Users/maolipeng/Documents/selfProject/site-tools/skills/sitectl-ops/scripts/site_json.py export --output /tmp/sitectl-bundle.json
-python3 /Users/maolipeng/Documents/selfProject/site-tools/skills/sitectl-ops/scripts/site_json.py logs app.example.com --kind error --lines 200
-python3 /Users/maolipeng/Documents/selfProject/site-tools/skills/sitectl-ops/scripts/site_json.py cert-warn --days 14
-python3 /Users/maolipeng/Documents/selfProject/site-tools/skills/sitectl-ops/scripts/site_json.py preview-update app.example.com --port 9090
-python3 /Users/maolipeng/Documents/selfProject/site-tools/skills/sitectl-ops/scripts/site_json.py apply-reload
-python3 /Users/maolipeng/Documents/selfProject/site-tools/skills/sitectl-ops/scripts/site_json.py preview-import --input /tmp/sitectl-bundle.json --force
-python3 /Users/maolipeng/Documents/selfProject/site-tools/skills/sitectl-ops/scripts/site_json.py apply-rollback app.example.com --backup 20260313153000123456
-python3 /Users/maolipeng/Documents/selfProject/site-tools/skills/sitectl-ops/scripts/site_json.py apply-history app.example.com
-python3 /Users/maolipeng/Documents/selfProject/site-tools/skills/sitectl-ops/scripts/site_audit.py app.example.com --include-runtime-log
-python3 /Users/maolipeng/Documents/selfProject/site-tools/skills/sitectl-ops/scripts/site_cert_report.py --days 14
-python3 /Users/maolipeng/Documents/selfProject/site-tools/skills/sitectl-ops/scripts/site_fleet_audit.py --include-runtime-log --only-problems
-python3 /Users/maolipeng/Documents/selfProject/site-tools/skills/sitectl-ops/scripts/site_fleet_autofix.py --only-problems --max-priority medium --dry-run-before-apply
-python3 /Users/maolipeng/Documents/selfProject/site-tools/skills/sitectl-ops/scripts/site_automation_templates.py --format json
-python3 /Users/maolipeng/Documents/selfProject/site-tools/skills/sitectl-ops/scripts/site_automation_templates.py --format directives --template daily-fleet-audit
-bash /Users/maolipeng/Documents/selfProject/site-tools/skills/sitectl-ops/scripts/site_status.sh app.example.com
-bash /Users/maolipeng/Documents/selfProject/site-tools/skills/sitectl-ops/scripts/site_healthcheck.sh app.example.com --path /healthz
-bash /Users/maolipeng/Documents/selfProject/site-tools/skills/sitectl-ops/scripts/site_cert_verify.sh secure.example.com
-bash /Users/maolipeng/Documents/selfProject/site-tools/skills/sitectl-ops/scripts/site_safe_create.sh --domain api.example.com --type proxy --port 8080 --email ops@example.com --apply
-bash /Users/maolipeng/Documents/selfProject/site-tools/skills/sitectl-ops/scripts/site_safe_update.sh api.example.com --port 9090 --apply
-bash /Users/maolipeng/Documents/selfProject/site-tools/skills/sitectl-ops/scripts/site_safe_remove.sh api.example.com --apply
+python3 ./skills/sitectl-ops/scripts/site_json.py list
+python3 ./skills/sitectl-ops/scripts/site_json.py status app.example.com
+python3 ./skills/sitectl-ops/scripts/site_json.py export --output /tmp/sitectl-bundle.json
+python3 ./skills/sitectl-ops/scripts/site_json.py logs app.example.com --kind error --lines 200
+python3 ./skills/sitectl-ops/scripts/site_json.py cert-warn --days 14
+python3 ./skills/sitectl-ops/scripts/site_json.py preview-update app.example.com --port 9090
+python3 ./skills/sitectl-ops/scripts/site_json.py apply-reload
+python3 ./skills/sitectl-ops/scripts/site_json.py preview-import --input /tmp/sitectl-bundle.json --force
+python3 ./skills/sitectl-ops/scripts/site_json.py apply-rollback app.example.com --backup 20260313153000123456
+python3 ./skills/sitectl-ops/scripts/site_json.py apply-history app.example.com
+python3 ./skills/sitectl-ops/scripts/site_audit.py app.example.com --include-runtime-log
+python3 ./skills/sitectl-ops/scripts/site_cert_report.py --days 14
+python3 ./skills/sitectl-ops/scripts/site_fleet_audit.py --include-runtime-log --only-problems
+python3 ./skills/sitectl-ops/scripts/site_fleet_autofix.py --only-problems --max-priority medium --dry-run-before-apply
+python3 ./skills/sitectl-ops/scripts/site_automation_templates.py --format json
+python3 ./skills/sitectl-ops/scripts/site_automation_templates.py --format directives --template daily-fleet-audit
+bash ./skills/sitectl-ops/scripts/site_status.sh app.example.com
+bash ./skills/sitectl-ops/scripts/site_healthcheck.sh app.example.com --path /healthz
+bash ./skills/sitectl-ops/scripts/site_cert_verify.sh secure.example.com
+bash ./skills/sitectl-ops/scripts/site_safe_create.sh --domain api.example.com --type proxy --port 8080 --email ops@example.com --apply
+bash ./skills/sitectl-ops/scripts/site_safe_update.sh api.example.com --port 9090 --apply
+bash ./skills/sitectl-ops/scripts/site_safe_remove.sh api.example.com --apply
 ```
 
 这些脚本会自动尝试：
 
 - 直接调用 `sitectl`
 - 调用仓库 `.venv/bin/sitectl`
-- 回退到 `PYTHONPATH=<repo> python3 -m sitectl`
+- 回退到 `PYTHONPATH=. python3 -m sitectl`
 
 其中：
 
@@ -246,7 +245,7 @@ bash /Users/maolipeng/Documents/selfProject/site-tools/skills/sitectl-ops/script
 - `site_fleet_audit.py` 适合批量站点巡检，并支持 `--domain`、`--match`、`--only-problems`
 - `site_fleet_audit.py` 会输出 `global_recommendations` 和 `global_autofix_candidates`
 - `site_fleet_autofix.py` 适合批量预览或执行有限的 autofix 候选，支持 `--dry-run-before-apply`
-- `site_fleet_autofix.py` 会读取 [autofix-policy.json](/Users/maolipeng/Documents/selfProject/site-tools/skills/sitectl-ops/assets/autofix-policy.json) 策略文件，支持命令白名单、黑名单、域名限制和按命令规则覆盖
+- `site_fleet_autofix.py` 会读取 [autofix-policy.json](./skills/sitectl-ops/assets/autofix-policy.json) 策略文件，支持命令白名单、黑名单、域名限制和按命令规则覆盖
 - `site_automation_templates.py` 会输出可复用的巡检和证书自动化模板，也支持直接生成 Codex automation 指令
 - `site_safe_create.sh` / `site_safe_update.sh` / `site_safe_remove.sh` 适合先 dry-run 再执行
 

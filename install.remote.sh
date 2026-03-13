@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SITECTL_ARCHIVE_URL="${SITECTL_ARCHIVE_URL:-}"
-SITECTL_REPO_URL="${SITECTL_REPO_URL:-}"
+SITECTL_REPO_URL="${SITECTL_REPO_URL:-https://github.com/Maolipeng/site-tools}"
 SITECTL_REF="${SITECTL_REF:-main}"
 SITECTL_DOWNLOAD_DIR="${SITECTL_DOWNLOAD_DIR:-}"
 
@@ -11,11 +11,12 @@ usage() {
 Usage:
   curl -fsSL <raw-install-remote-url> | bash
   curl -fsSL <raw-install-remote-url> | SITECTL_ARCHIVE_URL=https://example.com/sitectl.tar.gz bash
-  curl -fsSL <raw-install-remote-url> | SITECTL_REPO_URL=https://github.com/owner/repo bash -s -- --user
+  curl -fsSL <raw-install-remote-url> | SITECTL_REPO_URL=https://github.com/Maolipeng/site-tools bash -s -- --user
 
 Environment:
   SITECTL_ARCHIVE_URL   Direct .tar.gz source archive URL for the sitectl project.
   SITECTL_REPO_URL      GitHub repository URL used to derive the archive URL.
+                        Default: https://github.com/Maolipeng/site-tools
   SITECTL_REF           Git ref to download when SITECTL_REPO_URL is used. Default: main
   SITECTL_DOWNLOAD_DIR  Working directory to keep extracted files instead of a temporary directory.
 
@@ -59,14 +60,8 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 fi
 
 if [[ -z "$SITECTL_ARCHIVE_URL" ]]; then
-  if [[ -n "$SITECTL_REPO_URL" ]]; then
-    if ! SITECTL_ARCHIVE_URL="$(derive_archive_url "$SITECTL_REPO_URL")"; then
-      echo "Unable to derive archive URL from SITECTL_REPO_URL: $SITECTL_REPO_URL" >&2
-      exit 1
-    fi
-  else
-    echo "SITECTL_ARCHIVE_URL or SITECTL_REPO_URL must be provided." >&2
-    echo "Run with --help for usage examples." >&2
+  if ! SITECTL_ARCHIVE_URL="$(derive_archive_url "$SITECTL_REPO_URL")"; then
+    echo "Unable to derive archive URL from SITECTL_REPO_URL: $SITECTL_REPO_URL" >&2
     exit 1
   fi
 fi
