@@ -148,8 +148,9 @@ $CODEX_HOME/skills/sitectl-ops
 ```bash
 bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh --target claude
 bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh --target opencode
+bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh --target openclaw
 bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh --target agents
-bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh --target codex --target claude --target opencode
+bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh --target codex --target claude --target opencode --target openclaw
 bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh --target all
 ```
 
@@ -158,6 +159,7 @@ bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh --target
 - Codex: `~/.codex/skills` 或 `$CODEX_HOME/skills`
 - Claude Code 兼容目录: `~/.claude/skills`
 - OpenCode 全局目录: `${XDG_CONFIG_HOME:-~/.config}/opencode/skills`
+- OpenClaw 全局目录: `~/.openclaw/skills`
 - `.agents` 兼容目录: `~/.agents/skills`
 
 也支持项目级安装：
@@ -165,6 +167,7 @@ bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh --target
 ```bash
 bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh --target claude --scope project
 bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh --target opencode --scope project
+bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh --target openclaw --scope project
 bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh --target agents --scope project
 ```
 
@@ -172,6 +175,7 @@ bash /Users/maolipeng/Documents/selfProject/site-tools/install-skill.sh --target
 
 - Claude Code 兼容目录: `<project>/.claude/skills`
 - OpenCode 项目目录: `<project>/.opencode/skills`
+- OpenClaw 工作区目录: `<project>/skills`
 - `.agents` 项目目录: `<project>/.agents/skills`
 
 安装器还支持：
@@ -192,6 +196,7 @@ bash /Users/maolipeng/Documents/selfProject/site-tools/uninstall-skill.sh
 ```bash
 bash /Users/maolipeng/Documents/selfProject/site-tools/uninstall-skill.sh --target claude
 bash /Users/maolipeng/Documents/selfProject/site-tools/uninstall-skill.sh --target opencode
+bash /Users/maolipeng/Documents/selfProject/site-tools/uninstall-skill.sh --target openclaw
 bash /Users/maolipeng/Documents/selfProject/site-tools/uninstall-skill.sh --target all
 ```
 

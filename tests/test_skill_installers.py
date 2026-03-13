@@ -58,6 +58,41 @@ class SkillInstallerScriptsTestCase(unittest.TestCase):
             self.assertTrue(claude_path.is_symlink())
             self.assertTrue(opencode_path.is_symlink())
 
+    def test_install_skill_supports_openclaw_global_and_project_targets(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            project_root = temp_path / "openclaw-project"
+            project_root.mkdir()
+            env = os.environ.copy()
+            env["HOME"] = str(temp_path / "home")
+
+            subprocess.run(
+                ["bash", str(INSTALL_SCRIPT), "--target", "openclaw"],
+                check=True,
+                env=env,
+                cwd=REPO_ROOT,
+            )
+            global_path = Path(env["HOME"]) / ".openclaw" / "skills" / "sitectl-ops"
+            self.assertTrue(global_path.is_symlink())
+
+            subprocess.run(
+                [
+                    "bash",
+                    str(INSTALL_SCRIPT),
+                    "--target",
+                    "openclaw",
+                    "--scope",
+                    "project",
+                    "--project-root",
+                    str(project_root),
+                ],
+                check=True,
+                env=env,
+                cwd=REPO_ROOT,
+            )
+            project_path = project_root / "skills" / "sitectl-ops"
+            self.assertTrue(project_path.is_symlink())
+
     def test_uninstall_skill_removes_requested_target(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
