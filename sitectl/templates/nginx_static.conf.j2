@@ -1,0 +1,14 @@
+server {
+    listen 80;
+    server_name {{ server_names }};
+
+    root {{ root }};
+    index index.html;
+
+    access_log {{ access_log }};
+    error_log {{ error_log }};
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

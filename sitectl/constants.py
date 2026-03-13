@@ -1,0 +1,7 @@
+DEFAULT_NGINX_AVAILABLE_DIR = "/etc/nginx/sites-available"
+DEFAULT_NGINX_ENABLED_DIR = "/etc/nginx/sites-enabled"
+DEFAULT_NGINX_SNIPPETS_DIR = "/etc/nginx/snippets"
+DEFAULT_NGINX_MAIN_CONFIG = "/etc/nginx/nginx.conf"
+DEFAULT_CERT_LIVE_DIR = "/etc/letsencrypt/live"
+DEFAULT_STATE_FILE = "/etc/sitectl/sites.json"
+DEFAULT_LOG_DIR = "/var/log/nginx"

@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sitectl"
+version = "0.1.0"
+description = "Lightweight Linux site deployment manager for Nginx, Certbot, and PM2."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  { name = "OpenAI Codex" }
+]
+dependencies = []
+
+[project.scripts]
+sitectl = "sitectl.cli:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["sitectl", "sitectl.*"]
+
+[tool.setuptools.package-data]
+sitectl = ["templates/*.j2"]
+
