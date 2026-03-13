@@ -27,9 +27,10 @@ EOF
 
 derive_archive_url() {
   local repo_url="$1"
-  if [[ "$repo_url" =~ ^https://github\.com/([^/]+)/([^/]+?)(\.git)?/?$ ]]; then
+  if [[ "$repo_url" =~ ^https://github\.com/([^/]+)/([^/]+)/?$ ]]; then
     local owner="${BASH_REMATCH[1]}"
     local repo="${BASH_REMATCH[2]}"
+    repo="${repo%.git}"
     printf 'https://github.com/%s/%s/archive/refs/heads/%s.tar.gz\n' "$owner" "$repo" "$SITECTL_REF"
     return 0
   fi

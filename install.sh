@@ -116,6 +116,14 @@ print_success() {
   echo "  $sitectl_bin doctor"
 }
 
+print_path_hint() {
+  local path_dir="$1"
+  echo
+  echo "To add 'sitectl' to your zsh PATH permanently, append this to ~/.zshrc:"
+  echo "  # site-tools"
+  echo "  export PATH=\"$path_dir:\$PATH\""
+}
+
 if [[ "$INSTALL_MODE" == "venv" ]]; then
   "$PYTHON_BIN" -m venv "$VENV_DIR"
   VENV_PYTHON="$VENV_DIR/bin/python"
@@ -145,6 +153,7 @@ PY
     "$SITECTL_BIN" --help >/dev/null
   fi
   print_success "$SITECTL_BIN"
+  print_path_hint "$VENV_DIR/bin"
   echo
   echo "To use 'sitectl' directly in your shell:"
   echo "  source \"$VENV_DIR/bin/activate\""
@@ -178,4 +187,5 @@ if [[ "$INSTALL_MODE" == "user" ]]; then
   echo
   echo "If '$SITECTL_BIN' is not found, add this to PATH:"
   echo "  export PATH=\"$USER_BASE/bin:\$PATH\""
+  print_path_hint "$USER_BASE/bin"
 fi
