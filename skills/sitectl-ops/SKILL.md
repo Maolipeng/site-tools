@@ -20,6 +20,7 @@ description: "Use when the user wants to manage Linux site deployments with site
 - If `sitectl` is not on `PATH`, use `python -m sitectl ...` or the venv launcher path.
 - For mutating commands that support `--dry-run`, use it first when the change is risky, broad, or ambiguous.
 - When the user mentions a home machine, NAS, or public IPv6 instead of a traditional server, prefer `doctor --domain ... --listen-ipv6 ...` before issuing create/update guidance.
+- `sitectl` auto-detects common Nginx layouts from `nginx.conf`, including `/etc/nginx`, `/opt/homebrew/etc/nginx`, and `/usr/local/etc/nginx`. Only reach for `SITECTL_NGINX_*` overrides when the install layout is custom or the user has already pinned those env vars.
 
 ## Prefer bundled scripts
 
@@ -96,6 +97,7 @@ These scripts auto-resolve `sitectl` from `PATH`, the repo venv, or `python3 -m 
 1. Identify the target site and current state.
    - Use `scripts/site_json.py list`, `scripts/site_status.sh DOMAIN`, `scripts/site_json.py cert-info DOMAIN`, or `scripts/site_json.py doctor` as needed.
    - For IPv6-facing or home-network deployments, prefer `scripts/site_json.py doctor --domain ... --type ... --port ... --upstream-host ... --listen-ipv6` first.
+   - If the user is on macOS/Homebrew or reports `/etc/nginx` mismatches, assume `sitectl` should detect the active Nginx layout first; verify with `scripts/site_json.py doctor` before suggesting manual path overrides.
 2. Choose the narrowest `sitectl` command that matches the request.
 3. For create/update/remove/import/rollback/reload/renew/cert-replace, prefer a dry run before the live command when it adds safety.
    - If the plan includes `--listen-ipv6` and `letsencrypt`, check AAAA readiness before treating certificate issuance as safe.
@@ -161,10 +163,12 @@ Read only the reference file that matches the task:
 - `remove` does not delete the app directory, static files, or certificate files.
 - `systemd` support manages an existing service; it does not generate unit files.
 - `node` sites require a valid `package.json` in `--root`.
+- `node` sites pick `pnpm`, `yarn`, or `npm` from `packageManager` or lockfiles before install/build/start commands.
 - `static` sites require an existing directory in `--root`.
 - Use `--listen-ipv6` when the site should emit explicit `listen [::]` directives.
 - Use `--upstream-host ::1` or another host when the app is not bound to `127.0.0.1`.
 - `doctor --domain ...` can check whether AAAA already points at the host and suggest the next `sitectl create` shape.
+- `SITECTL_NGINX_MAIN_CONFIG` changes the derived default `sites-available`, `sites-enabled`, and `snippets` directories unless those are explicitly overridden too.
 
 ## High-signal examples
 

@@ -29,6 +29,8 @@ class HealthcheckService:
             return HealthcheckProbe(name=name, ok=False, detail=f"{url} returned {exc.code}", status_code=exc.code)
         except urllib.error.URLError as exc:
             return HealthcheckProbe(name=name, ok=False, detail=f"{url} failed: {exc.reason}")
+        except TimeoutError:
+            return HealthcheckProbe(name=name, ok=False, detail=f"{url} failed: timed out")
 
     def run(
         self,

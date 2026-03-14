@@ -11,7 +11,7 @@ from threading import Thread
 from unittest.mock import patch
 
 from sitectl.config import SiteCtlConfig
-from sitectl.exceptions import CommandExecutionError, SiteCtlError
+from sitectl.exceptions import CommandExecutionError, NginxConfigError, SiteAlreadyExistsError, SiteCtlError
 from sitectl.services.certbot_service import CertbotService
 from sitectl.services.certificate_service import CertificateService
 from sitectl.services.doctor_service import DoctorService
@@ -104,7 +104,7 @@ class FakeSystemService:
             key_path = Path(command[3])
             return subprocess.CompletedProcess(command, 0, stdout=f"PUBKEY:{key_path.read_text(encoding='utf-8').strip()}", stderr="")
 
-        if command[:4] == ["pm2", "start", "npm", "--name"]:
+        if command[:2] == ["pm2", "start"] and len(command) >= 5 and command[3] == "--name":
             self.pm2_processes.add(command[4])
             return subprocess.CompletedProcess(command, 0, stdout="started", stderr="")
 
@@ -233,6 +233,28 @@ class SiteServiceIntegrationTestCase(unittest.TestCase):
         self.assertEqual(backups[0].read_text(encoding="utf-8"), "old config")
         self.assertIn("proxy_pass http://127.0.0.1:8080;", original_path.read_text(encoding="utf-8"))
 
+    def test_create_reports_orphaned_nginx_config_more_clearly(self) -> None:
+        config_path = self.config.nginx_available_dir / "orphan.example.com"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text("server {}", encoding="utf-8")
+
+        with self.assertRaises(SiteAlreadyExistsError) as ctx:
+            self.site_service.create_site(
+                domain="orphan.example.com",
+                site_type="proxy",
+                root=None,
+                port=8080,
+                pm2_name=None,
+                service_name=None,
+                email="ops@example.com",
+                aliases=None,
+                force=False,
+            )
+
+        message = str(ctx.exception)
+        self.assertIn("but no matching state record was found", message)
+        self.assertIn("pass --force", message)
+
     def test_create_proxy_site_supports_ipv6_listen_and_upstream_host(self) -> None:
         record = self.site_service.create_site(
             domain="ipv6.example.com",
@@ -295,11 +317,48 @@ class SiteServiceIntegrationTestCase(unittest.TestCase):
         self.assertEqual(commands[1]["command"], ["npm", "run", "build"])
         self.assertEqual(commands[1]["cwd"], app_root)
 
-        pm2_start = next(entry for entry in commands if entry["command"][:4] == ["pm2", "start", "npm", "--name"])
+        pm2_start = next(entry for entry in commands if entry["command"][:2] == ["pm2", "start"])
         self.assertEqual(pm2_start["command"], ["pm2", "start", "npm", "--name", "app-example", "--", "run", "start"])
         self.assertEqual(pm2_start["cwd"], app_root)
         self.assertEqual(pm2_start["env"]["PORT"], "3000")
         self.assertIn("app-example", self.system.pm2_processes)
+
+    def test_create_node_site_uses_pnpm_when_lockfile_exists(self) -> None:
+        app_root = Path(self.temp_dir.name) / "pnpm-node-app"
+        self.system.available_commands.add("pnpm")
+        app_root.mkdir(parents=True, exist_ok=True)
+        (app_root / "package.json").write_text(
+            json.dumps(
+                {
+                    "name": "pnpm-node-app",
+                    "scripts": {
+                        "build": "next build",
+                        "start": "next start",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        (app_root / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\n", encoding="utf-8")
+
+        self.site_service.create_site(
+            domain="pnpm.example.com",
+            site_type="node",
+            root=str(app_root),
+            port=3000,
+            pm2_name="pnpm-example",
+            service_name=None,
+            email="ops@example.com",
+            aliases=None,
+            force=False,
+        )
+
+        commands = self.system.commands
+        self.assertEqual(commands[0]["command"], ["pnpm", "install"])
+        self.assertEqual(commands[1]["command"], ["pnpm", "run", "build"])
+        pm2_start = next(entry for entry in commands if entry["command"][:2] == ["pm2", "start"])
+        self.assertEqual(pm2_start["command"], ["pm2", "start", "pnpm", "--name", "pnpm-example", "--", "run", "start"])
+        self.assertEqual(pm2_start["env"]["PORT"], "3000")
 
     def test_remove_site_deletes_files_and_updates_state(self) -> None:
         self.site_service.create_site(
@@ -908,6 +967,32 @@ class SiteServiceIntegrationTestCase(unittest.TestCase):
         self.assertTrue(probes["local_http"].ok)
         self.assertTrue(probes["remote_https"].ok)
 
+    def test_healthcheck_reports_remote_timeout_as_failed_probe(self) -> None:
+        self.site_service.create_site(
+            domain="timeout.example.com",
+            site_type="proxy",
+            root=None,
+            port=8080,
+            pm2_name=None,
+            service_name=None,
+            email="ops@example.com",
+            aliases=None,
+        )
+
+        with patch("urllib.request.urlopen", side_effect=TimeoutError):
+            report = self.site_service.run_healthcheck(
+                "timeout.example.com",
+                path="/",
+                timeout=1.0,
+                skip_local=True,
+                skip_remote=False,
+                remote_url="https://timeout.example.com/",
+            )
+
+        probes = {probe.name: probe for probe in report.probes}
+        self.assertFalse(probes["remote_https"].ok)
+        self.assertIn("timed out", probes["remote_https"].detail)
+
     def test_run_doctor_reports_expected_checks(self) -> None:
         self.config.nginx_available_dir.mkdir(parents=True, exist_ok=True)
         self.config.nginx_enabled_dir.mkdir(parents=True, exist_ok=True)
@@ -1133,6 +1218,18 @@ class SiteServiceIntegrationTestCase(unittest.TestCase):
         self.assertEqual(restored_state["sites"][0]["type"], "systemd")
         self.assertEqual(restored_state["sites"][0]["service_name"], "rollback-svc")
         self.assertIn("rollback-svc", self.system.systemd_services)
+
+    def test_restore_snapshot_wraps_filesystem_errors(self) -> None:
+        snapshot = self.nginx_service.snapshot_site("api.example.com")
+        with patch.object(Path, "mkdir", side_effect=PermissionError("denied")):
+            with self.assertRaises(NginxConfigError) as ctx:
+                self.nginx_service.restore_snapshot(snapshot)
+        self.assertIn("Failed to restore Nginx snapshot for api.example.com", str(ctx.exception))
+
+    def test_reload_nginx_ignores_missing_pid_reload_error(self) -> None:
+        self.system.fail_commands[("systemctl", "reload", "nginx")] = "systemctl unavailable"
+        self.system.fail_commands[("nginx", "-s", "reload")] = 'nginx: [error] invalid PID number "" in "/opt/homebrew/var/run/nginx.pid"'
+        self.nginx_service.reload_nginx(validate_first=False)
 
 
 if __name__ == "__main__":

@@ -26,7 +26,7 @@
 - 支持 `export`、`import`
 - 支持 `logs`、`healthcheck`、`doctor`
 - 支持 `cert-info`、`cert-expiring`、`cert-warn`、`cert-verify`、`cert-replace`
-- 通过 `/etc/sitectl/sites.json` 持久化本地状态
+- 通过环境感知的 `sites.json` 持久化本地状态，Linux 默认 `/etc/sitectl/sites.json`，macOS 默认 `~/Library/Application Support/sitectl/sites.json`
 
 ## 要求
 
@@ -39,7 +39,15 @@
   - `pm2`、`npm`、`node`，仅 `node` 类型需要
   - `systemctl`、`journalctl`，仅 `systemd` 类型和部分运维命令需要
 
-通常需要使用 `root` 或具备相应权限的用户执行，以便写入 `/etc/nginx`、`/etc/sitectl` 并重载 Nginx。
+通常需要使用 `root` 或具备相应权限的用户执行，以便写入 Nginx 配置目录并重载 Nginx。Linux 默认状态文件在 `/etc/sitectl`，macOS 默认状态文件在当前用户目录下。
+
+如果 `nginx` 不是安装在 `/etc/nginx`，`sitectl` 会自动探测常见布局：
+
+- Linux 默认布局：`/etc/nginx/nginx.conf`
+- Apple Silicon Homebrew：`/opt/homebrew/etc/nginx/nginx.conf`
+- Intel Homebrew：`/usr/local/etc/nginx/nginx.conf`
+
+探测成功后，会自动推导对应的 `sites-available`、`sites-enabled`、`snippets` 和日志目录。特殊环境仍然可以用环境变量显式覆盖。
 
 ## 安装
 
@@ -339,6 +347,103 @@ sitectl create \
   --ssl-key /etc/ssl/private/cloudflare-origin.key
 ```
 
+## 部署示例
+
+下面每种部署都给一套可直接参考的流程，覆盖创建、检查和常见更新动作。
+
+### Node / PM2 部署示例
+
+适合 Next.js、Express、NestJS、Koa 等 Node 项目。
+
+```bash
+sitectl create \
+  --domain app.example.com \
+  --type node \
+  --root /srv/app \
+  --port 3000 \
+  --pm2-name app-example \
+  --email ops@example.com
+
+sitectl status app.example.com
+sitectl healthcheck app.example.com --path /healthz
+sitectl logs app.example.com --pm2 --lines 100
+sitectl update app.example.com --port 3001
+```
+
+### 反向代理部署示例
+
+适合已经在本地端口运行的 Python、Go、Java、Docker 服务。
+
+```bash
+sitectl create \
+  --domain api.example.com \
+  --type proxy \
+  --port 8080 \
+  --email ops@example.com
+
+sitectl status api.example.com
+sitectl healthcheck api.example.com --path /ready
+sitectl logs api.example.com --error --lines 100
+sitectl update api.example.com --port 9090
+```
+
+### 静态站点部署示例
+
+适合 React、Vue、Vite、Astro 等构建后的产物目录。
+
+```bash
+sitectl create \
+  --domain www.example.com \
+  --type static \
+  --root /srv/www/example \
+  --email ops@example.com
+
+sitectl status www.example.com
+sitectl healthcheck www.example.com
+sitectl update www.example.com --alias cdn.example.com
+```
+
+### systemd 服务部署示例
+
+适合已经存在 unit 的后端服务。
+
+```bash
+sitectl create \
+  --domain svc.example.com \
+  --type systemd \
+  --port 9000 \
+  --service-name my-backend \
+  --email ops@example.com
+
+sitectl status svc.example.com
+sitectl logs svc.example.com --systemd --lines 100
+sitectl update svc.example.com --service-name my-backend-v2 --port 9100
+```
+
+### IPv6 代理部署示例
+
+适合家庭宽带、NAS 或仅监听 `::1` 的本地服务。
+
+```bash
+sitectl doctor \
+  --domain ipv6.example.com \
+  --type proxy \
+  --port 8080 \
+  --upstream-host ::1 \
+  --listen-ipv6 \
+  --email ops@example.com
+
+sitectl create \
+  --domain ipv6.example.com \
+  --type proxy \
+  --port 8080 \
+  --upstream-host ::1 \
+  --listen-ipv6 \
+  --email ops@example.com
+
+sitectl healthcheck ipv6.example.com
+```
+
 ## 站点类型
 
 ### `node`
@@ -355,9 +460,10 @@ sitectl create \
 行为：
 
 - 校验 `package.json` 是否存在
-- 执行 `npm install`
-- 如果存在 `build` script，则执行 `npm run build`
-- 使用 PM2 启动或重启 `npm run start`
+- 优先按 `packageManager` 字段或锁文件自动选择 `pnpm`、`yarn`、`npm`
+- 执行对应的 `<package-manager> install`
+- 如果存在 `build` script，则执行对应的 `<package-manager> run build`
+- 使用 PM2 启动或重启对应的 `<package-manager> run start`
 - 注入 `PORT` 环境变量
 - 生成 Nginx 反向代理配置
 - 校验 Nginx，reload
@@ -503,19 +609,24 @@ sitectl create \
 
 ### `create`
 
-创建站点。
+用途：创建一个新的受管站点，并按站点类型生成 Nginx 配置、维护状态文件，必要时处理运行态和证书。
 
-通用参数：
+关键参数：
 
-- `--domain DOMAIN`
-- `--type {node,proxy,static,systemd}`
-- `--alias DOMAIN`，可重复使用
-- `--ssl-mode {letsencrypt,manual}`
-- `--ssl-cert PATH`
-- `--ssl-key PATH`
-- `--email EMAIL`
-- `--force`
-- `--dry-run`
+- `--domain DOMAIN`，主域名
+- `--type {node,proxy,static,systemd}`，站点类型
+- `--root PATH`，`node` 和 `static` 常用
+- `--port PORT`，`node`、`proxy`、`systemd` 必需
+- `--pm2-name NAME`，`node` 必需
+- `--service-name NAME`，`systemd` 必需
+- `--alias DOMAIN`，可重复传入多个别名
+- `--listen-ipv6`，生成显式 IPv6 `listen`
+- `--upstream-host HOST`，指定回源地址，如 `127.0.0.1` 或 `::1`
+- `--ssl-mode {letsencrypt,manual}`，默认为 `letsencrypt`
+- `--ssl-cert PATH` 和 `--ssl-key PATH`，`manual` 模式必需
+- `--email EMAIL`，`letsencrypt` 模式必需
+- `--force`，允许覆盖已有配置
+- `--dry-run`，只预览不落地
 
 示例：
 
@@ -539,29 +650,25 @@ sitectl create \
   --ssl-key /etc/ssl/private/origin.key
 ```
 
-`--force` 行为：
+补充说明：
 
-- 如果目标 Nginx 配置已存在，会先备份旧配置
-- 备份文件格式：`<domain>.bak.<timestamp>`
-- 如果未加 `--force`，默认拒绝覆盖
+- `--force` 会先备份旧配置，备份名格式为 `<domain>.bak.<timestamp>`
+- 未加 `--force` 时，遇到同名配置默认拒绝覆盖
 
 ### `update`
 
-更新已有站点。
+用途：更新已有站点配置，并在必要时重写 Nginx、切换证书参数、调整 PM2 或 systemd 关联设置。
 
-可修改字段：
+关键参数：
 
-- `--type`
-- `--root`
-- `--port`
-- `--pm2-name`
-- `--service-name`
+- `domain`，要更新的站点域名
+- `--type`、`--root`、`--port`
+- `--pm2-name`、`--service-name`
+- `--listen-ipv6`、`--no-listen-ipv6`
+- `--upstream-host`
+- `--alias`、`--clear-aliases`
+- `--ssl-mode`、`--ssl-cert`、`--ssl-key`
 - `--email`
-- `--alias`
-- `--clear-aliases`
-- `--ssl-mode`
-- `--ssl-cert`
-- `--ssl-key`
 - `--dry-run`
 
 示例：
@@ -575,7 +682,7 @@ sitectl update api.example.com --alias www.example.com --alias admin.example.com
 ```
 
 ```bash
-sitectl update api.example.com --clear-aliases
+sitectl update api.example.com --clear-aliases --listen-ipv6 --upstream-host ::1
 ```
 
 ```bash
@@ -585,17 +692,21 @@ sitectl update secure.example.com \
   --ssl-key /etc/ssl/private/new-origin.key
 ```
 
-更新行为：
+补充说明：
 
-- 自动备份旧 Nginx 配置
-- 重写配置并校验
-- reload Nginx
-- 更新状态文件
-- 如果运行态失败，会尽量回滚 Nginx 和 PM2 / systemd
+- 更新前会备份旧配置
+- 修改失败时会尽量回滚 Nginx 和运行态
 
 ### `remove`
 
-删除站点。
+用途：移除站点配置和受管状态。
+
+关键参数：
+
+- `domain`
+- `--dry-run`
+
+示例：
 
 ```bash
 sitectl remove app.example.com
@@ -605,57 +716,59 @@ sitectl remove app.example.com
 sitectl remove app.example.com --dry-run
 ```
 
-行为：
+补充说明：
 
-- 删除 `sites-enabled` 软链
-- 删除 `sites-available` 配置
-- `node` 类型会尝试删除对应 PM2 进程
-- `systemd` 类型会尝试停止对应服务
-- 执行 `nginx -t` 和 reload
-- 从状态文件移除站点
-
-不会删除：
-
-- Let's Encrypt 证书文件
-- 手动证书文件
-- 业务目录
+- 会删除 `sites-enabled` 软链和 `sites-available` 配置
+- `node` 会尝试删除 PM2 进程，`systemd` 会尝试停止服务
+- 不会删除业务目录、Let's Encrypt 证书文件或手动证书文件
 
 ### `list`
 
-列出已管理站点。
+用途：列出当前所有受管站点。
+
+示例：
 
 ```bash
 sitectl list
 ```
 
-行为：
+补充说明：
 
-- 优先从状态文件读取
-- 如果状态文件缺失或损坏，会回退扫描 `sites-available`
+- 优先读取状态文件
+- 状态文件损坏时会回退扫描 Nginx 配置目录
 
 ### `status`
 
-查看站点状态。
+用途：查看单个站点的配置、证书和运行状态。
+
+关键参数：
+
+- `domain`
+
+示例：
 
 ```bash
 sitectl status app.example.com
 ```
 
-输出至少包含：
+输出通常包含：
 
-- `domain`
-- `type`
-- `ssl_mode`
-- Nginx 配置是否存在
-- enabled 软链是否存在
+- 站点基础信息：`domain`、`type`、`ssl_mode`
+- Nginx 配置和 enabled 软链是否存在
 - 证书文件是否存在
-- `node` 类型时 PM2 进程是否存在
-- `systemd` 类型时服务是否 active
-- 本地端口是否可连接
+- 本地端口是否可连通
+- `node` 站点的 PM2 状态
+- `systemd` 站点的服务状态
 
 ### `reload`
 
-校验并重载 Nginx。
+用途：执行 `nginx -t` 校验并重载 Nginx。
+
+关键参数：
+
+- `--dry-run`
+
+示例：
 
 ```bash
 sitectl reload
@@ -665,14 +778,16 @@ sitectl reload
 sitectl reload --dry-run
 ```
 
-行为：
-
-- 先执行 `nginx -t`
-- 校验通过才执行 reload
-
 ### `renew`
 
-续期 Let's Encrypt 证书。
+用途：续期 Let's Encrypt 证书。
+
+关键参数：
+
+- `domain`，可选；不传时续期全部
+- `--dry-run`
+
+示例：
 
 ```bash
 sitectl renew
@@ -683,30 +798,43 @@ sitectl renew app.example.com
 sitectl renew app.example.com --dry-run
 ```
 
-说明：
+补充说明：
 
-- 无参数时执行全局续期
-- 指定域名时执行 `certbot renew --cert-name DOMAIN`
-- 续期后会执行 `nginx -t` 和 reload
-- `manual` 站点不支持 `renew`
+- 指定域名时等价于按 `cert-name` 续期
+- 续期后会重新校验并 reload Nginx
+- `manual` 证书站点不支持该命令
 
 ### `history`
 
-列出站点备份历史。
+用途：查看某个站点可用的备份历史。
+
+关键参数：
+
+- `domain`
+
+示例：
 
 ```bash
 sitectl history api.example.com
 ```
 
-输出内容包括：
+输出通常包含：
 
 - 备份文件名
-- 备份文件路径
-- 是否附带状态元数据
+- 备份路径
+- 是否包含站点元数据
 
 ### `rollback`
 
-回滚站点到某个备份。
+用途：从备份恢复某个站点。
+
+关键参数：
+
+- `domain`
+- `--backup BACKUP`
+- `--dry-run`
+
+示例：
 
 ```bash
 sitectl rollback api.example.com --backup api.example.com.bak.20260313153000123456
@@ -716,17 +844,20 @@ sitectl rollback api.example.com --backup api.example.com.bak.202603131530001234
 sitectl rollback api.example.com --backup 20260313153000123456 --dry-run
 ```
 
-行为：
+补充说明：
 
-- 先备份当前配置
-- 恢复目标 Nginx 配置
-- 如果备份包含元数据，会恢复 `sites.json` 中的站点记录
-- 会尝试恢复 PM2 或 systemd 运行态
-- 执行 `nginx -t` 和 reload
+- 会先备份当前配置，再恢复目标备份
+- 备份若带元数据，会同时恢复状态文件记录
 
 ### `export`
 
-导出状态和配置。
+用途：导出站点状态和当前配置，便于迁移或备份。
+
+关键参数：
+
+- `--output FILE`
+
+示例：
 
 ```bash
 sitectl export
@@ -743,36 +874,40 @@ sitectl export --output /tmp/sitectl-bundle.json
 
 ### `import`
 
-从导出包恢复站点状态和配置。
+用途：从导出包导入受管站点配置。
+
+关键参数：
+
+- `--input FILE`
+- `--force`
+- `--dry-run`
+
+示例：
 
 ```bash
 sitectl import --input /tmp/sitectl-bundle.json
 ```
 
 ```bash
-sitectl import --input /tmp/sitectl-bundle.json --force
+sitectl import --input /tmp/sitectl-bundle.json --force --dry-run
 ```
 
-```bash
-sitectl import --input /tmp/sitectl-bundle.json --dry-run
-```
+补充说明：
 
-行为：
-
-- 恢复 `sites-available` 配置
-- 恢复 `sites-enabled` 软链
-- 合并状态文件
-- 执行 `nginx -t` 和 reload
-
-注意：
-
-- 不会自动重建 PM2 进程
-- 不会自动重启 systemd 服务
-- 不会重新申请 Certbot 证书
+- 会恢复 Nginx 配置、软链和状态文件记录
+- 不会自动重建 PM2 进程、重启 systemd 服务或重新签发证书
 
 ### `logs`
 
-查看日志。
+用途：查看站点相关日志。
+
+关键参数：
+
+- `domain`
+- `--access`、`--error`、`--pm2`、`--systemd`
+- `--lines N`
+
+示例：
 
 ```bash
 sitectl logs app.example.com --error --lines 200
@@ -781,17 +916,26 @@ sitectl logs app.example.com --pm2 --lines 100
 sitectl logs svc.example.com --systemd --lines 100
 ```
 
-说明：
+补充说明：
 
-- `--error` 读取 `/var/log/nginx/<domain>.error.log`
-- `--access` 读取 `/var/log/nginx/<domain>.access.log`
-- `--pm2` 读取 Node 站点 PM2 日志
-- `--systemd` 读取 `journalctl` 日志
-- 不传类型时默认查看 error log
+- 不传类型时默认读取 Nginx error log
+- `--pm2` 仅适合 `node` 站点
+- `--systemd` 仅适合 `systemd` 站点
 
 ### `healthcheck`
 
-执行健康检查。
+用途：对站点执行本地和远程健康检查。
+
+关键参数：
+
+- `domain`
+- `--path PATH`
+- `--timeout SECONDS`
+- `--skip-local`
+- `--skip-remote`
+- `--remote-url URL`
+
+示例：
 
 ```bash
 sitectl healthcheck app.example.com
@@ -805,29 +949,31 @@ sitectl healthcheck app.example.com --path /healthz --timeout 2
 sitectl healthcheck app.example.com --skip-remote
 ```
 
-默认会执行：
+默认检查包括：
 
-- 本地 TCP 检查 `127.0.0.1:<port>`
-- 本地 HTTP 检查 `http://127.0.0.1:<port>/<path>`
-- 远程 HTTPS 检查 `https://<domain>/<path>`
-
-可选参数：
-
-- `--path`
-- `--timeout`
-- `--skip-local`
-- `--skip-remote`
-- `--remote-url`
+- 本地 TCP 连接检查
+- 本地 HTTP 探测
+- 远程 HTTPS 探测
 
 ### `doctor`
 
-环境自检。
+用途：检查当前环境是否适合部署站点，特别适合上线前排查 Nginx、证书和 IPv6 准备情况。
+
+关键参数：
+
+- `--domain`
+- `--type`
+- `--port`
+- `--upstream-host`
+- `--listen-ipv6`
+- `--email`
+- `--ssl-mode {letsencrypt,manual}`
+
+示例：
 
 ```bash
 sitectl doctor
 ```
-
-如果你是在家里电脑或 NAS 上用公网 IPv6 提供服务，可以带上目标域名和计划中的站点参数一起检查：
 
 ```bash
 sitectl doctor \
@@ -841,88 +987,98 @@ sitectl doctor \
 
 检查项包括：
 
-- `nginx`、`certbot`、`openssl`、`pm2`、`npm` 是否在 `PATH`
-- `ip` 是否在 `PATH`
-- `systemctl`、`journalctl` 是否在 `PATH`
-- `sites-available` / `sites-enabled` 是否存在
-- 状态文件父目录是否可写
-- `nginx.conf` 是否包含 `sites-enabled`
-- 80 / 443 端口是否可绑定
-- IPv6 的 80 / 443 端口是否可绑定
-- 是否检测到公网 IPv6 地址
-
-如果检测到公网 IPv6，`doctor` 会额外提示：
-
-- 可以把域名 AAAA 记录指向该 IPv6
-- 可以为站点启用 `--listen-ipv6`
-- 本地服务如果只监听 `::1`，可以配合 `--upstream-host ::1`
-- 然后用 Let's Encrypt 或手动证书启用 HTTPS
-- 如果传了 `--domain`，还会检查该域名的 AAAA 是否已经解析到本机 IPv6，并给出下一步 `sitectl create` 建议
+- 核心命令是否在 `PATH`
+- 当前 Nginx 主配置和派生目录是否可用
+- 状态目录是否可写
+- 80 和 443 端口是否可绑定
+- IPv6 是否可用以及是否检测到公网 IPv6
+- 如果传了 `--domain`，还会检查该域名的 AAAA 解析和下一步建议
 
 ### `cert-info`
 
-查看证书详情。
+用途：查看某个站点当前证书的详细信息。
+
+关键参数：
+
+- `domain`
+
+示例：
 
 ```bash
 sitectl cert-info secure.example.com
 ```
 
-输出包括：
+输出通常包含：
 
-- `ssl_mode`
-- `cert_path`
-- `key_path`
-- `exists`
-- `subject`
-- `issuer`
-- `not_before`
-- `not_after`
-- `days_remaining`
+- 证书路径和私钥路径
+- `subject`、`issuer`
+- `not_before`、`not_after`
+- 剩余有效天数
 
 ### `cert-expiring`
 
-列出即将过期或缺失的证书。
+用途：列出即将过期或已缺失的证书。
+
+关键参数：
+
+- `--days N`，默认 `30`
+
+示例：
 
 ```bash
 sitectl cert-expiring --days 14
 ```
 
-行为：
-
-- 列出在阈值内即将过期的证书
-- 列出证书文件已缺失的站点
-
 ### `cert-warn`
 
-适合定时任务或监控。
+用途：用于 cron 或监控系统的证书告警命令。
+
+关键参数：
+
+- `--days N`，默认 `30`
+
+示例：
 
 ```bash
 sitectl cert-warn --days 14
 ```
 
-行为：
+补充说明：
 
-- 输出告警格式列表
-- 如果存在即将过期或缺失的证书，退出码为 `1`
-- 如果没有问题，退出码为 `0`
+- 有问题时退出码为 `1`
+- 无问题时退出码为 `0`
 
 ### `cert-verify`
 
-检查证书和私钥是否匹配。
+用途：检查证书文件与私钥是否匹配。
+
+关键参数：
+
+- `domain`
+
+示例：
 
 ```bash
 sitectl cert-verify secure.example.com
 ```
 
-行为：
+补充说明：
 
-- 检查证书文件和私钥文件是否存在
-- 使用 `openssl` 比较公钥
-- 适用于 `letsencrypt` 和 `manual` 站点
+- 同时适用于 `letsencrypt` 和 `manual` 站点
+- 底层通过 `openssl` 对比公钥
 
 ### `cert-replace`
 
-替换手动证书站点的证书文件。
+用途：替换手动证书站点使用的证书文件。
+
+关键参数：
+
+- `domain`
+- `--ssl-cert PATH`
+- `--ssl-key PATH`
+- `--dry-run`
+
+示例：
 
 ```bash
 sitectl cert-replace secure.example.com \
@@ -937,12 +1093,10 @@ sitectl cert-replace secure.example.com \
   --dry-run
 ```
 
-行为：
+补充说明：
 
 - 仅适用于 `ssl_mode=manual`
-- 更新状态文件中的证书路径
-- 重写 Nginx 配置
-- 自动执行 `nginx -t` 和 reload
+- 替换后会重写配置并 reload Nginx
 
 ## Alias 多域名
 
@@ -1027,7 +1181,17 @@ Dry run 会输出：
 默认状态文件：
 
 ```text
+Linux 默认：
+
+```bash
 /etc/sitectl/sites.json
+```
+
+macOS 默认：
+
+```bash
+~/Library/Application\ Support/sitectl/sites.json
+```
 ```
 
 示例：
@@ -1061,6 +1225,7 @@ Dry run 会输出：
 
 - `SITECTL_NGINX_AVAILABLE_DIR`
 - `SITECTL_NGINX_ENABLED_DIR`
+- `SITECTL_NGINX_SNIPPETS_DIR`
 - `SITECTL_NGINX_MAIN_CONFIG`
 - `SITECTL_STATE_FILE`
 - `SITECTL_CERT_LIVE_DIR`
@@ -1068,11 +1233,16 @@ Dry run 会输出：
 
 ## 默认路径
 
-- `sites-available`: `/etc/nginx/sites-available`
-- `sites-enabled`: `/etc/nginx/sites-enabled`
+- 默认会先自动探测 `nginx.conf`，支持：
+  - `/etc/nginx/nginx.conf`
+  - `/opt/homebrew/etc/nginx/nginx.conf`
+  - `/usr/local/etc/nginx/nginx.conf`
+- `sites-available`: `<nginx.conf 所在目录>/sites-available`
+- `sites-enabled`: `<nginx.conf 所在目录>/sites-enabled`
+- `snippets`: `<nginx.conf 所在目录>/snippets`
 - `certbot live`: `/etc/letsencrypt/live`
-- `state file`: `/etc/sitectl/sites.json`
-- `nginx logs`: `/var/log/nginx`
+- `state file`: Linux 默认 `/etc/sitectl/sites.json`，macOS 默认 `~/Library/Application Support/sitectl/sites.json`
+- `nginx logs`: Linux 默认 `/var/log/nginx`，Homebrew 默认 `<prefix>/var/log/nginx`
 
 ## 测试
 
@@ -1081,6 +1251,22 @@ Dry run 会输出：
 ```bash
 python3 -m unittest discover -s tests -v
 ```
+
+## 在 macOS 上切换 443 给 nginx 或 Tailscale
+
+如果你本机同时装了 Homebrew nginx 和 Tailscale，而 `443` 只能由其中一个进程占用，可以用仓库里这两个脚本切换：
+
+```bash
+zsh /Users/maolipeng/site-tools/scripts/switch_443_to_nginx.sh
+zsh /Users/maolipeng/site-tools/scripts/switch_443_to_tailscale.sh
+```
+
+说明：
+
+- `switch_443_to_nginx.sh` 会退出 Tailscale，然后重启 Homebrew nginx
+- `switch_443_to_tailscale.sh` 会停止 Homebrew nginx，然后重新打开 Tailscale
+- 两个脚本最后都会打印当前 `:443` 的监听者，方便确认是否切换成功
+- 如果 Tailscale 不是通过 GUI app 接管 `443`，你需要按自己的 Tailscale 用法补充额外启动步骤
 
 ## 注意事项
 

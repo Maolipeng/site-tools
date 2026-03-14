@@ -276,8 +276,9 @@ class SiteService:
             actions.append(f"use manual TLS certificate {record.ssl_cert_path}")
             actions.append(f"use manual TLS private key {record.ssl_key_path}")
         if record.type is SiteType.NODE and record.root and record.pm2_name and record.port is not None:
-            actions.append(f"run npm install in {record.root}")
-            actions.append(f"run npm run build in {record.root} if package.json defines a build script")
+            package_manager = self.pm2_service.package_manager(Path(record.root))
+            actions.append(f"run {package_manager} install in {record.root}")
+            actions.append(f"run {package_manager} run build in {record.root} if package.json defines a build script")
             if previous_record and previous_record.type is SiteType.NODE and previous_record.pm2_name == record.pm2_name:
                 actions.append(f"restart PM2 process {record.pm2_name} with PORT={record.port}")
             else:
@@ -352,8 +353,14 @@ class SiteService:
         normalized_domain = validate_domain(domain)
         existing_record = self._find_record(normalized_domain)
         config_path = self.nginx_service.config_path(normalized_domain)
-        if (existing_record or config_path.exists()) and not force:
-            raise SiteAlreadyExistsError(f"Site already exists: {normalized_domain}")
+        if not force:
+            if existing_record:
+                raise SiteAlreadyExistsError(f"Site already exists in state: {normalized_domain}. Use 'sitectl status {normalized_domain}' to inspect it or pass --force to overwrite the Nginx config.")
+            if config_path.exists():
+                raise SiteAlreadyExistsError(
+                    f"Nginx config already exists for {normalized_domain} at {config_path}, but no matching state record was found. "
+                    f"Use 'sitectl status {normalized_domain}' to inspect it or pass --force to adopt and overwrite the existing config."
+                )
 
         record = self._build_record(
             domain=normalized_domain,
@@ -380,7 +387,7 @@ class SiteService:
         try:
             if record.type is SiteType.NODE and record.root and record.pm2_name and record.port is not None:
                 root_path = Path(record.root)
-                self.pm2_service.npm_install(root_path)
+                self.pm2_service.install_dependencies(root_path)
                 self.pm2_service.build_if_present(root_path)
                 self.pm2_service.start_or_restart(record.pm2_name, root_path, record.port)
                 cleanup_pm2_name = record.pm2_name

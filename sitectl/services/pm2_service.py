@@ -21,14 +21,41 @@ class PM2Service:
         except json.JSONDecodeError as exc:
             raise ValidationError(f"Invalid package.json in {root}: {exc}") from exc
 
-    def npm_install(self, root: Path) -> None:
-        self.system_service.run(["npm", "install"], cwd=root)
+    def package_manager(self, root: Path) -> str:
+        package_data = self._load_package_json(root)
+        configured = package_data.get("packageManager")
+        if isinstance(configured, str) and configured:
+            manager = configured.split("@", 1)[0]
+            if manager in {"npm", "pnpm", "yarn"}:
+                if self.system_service.command_exists(manager):
+                    return manager
+                raise ValidationError(f"{manager} is required by packageManager in {root / 'package.json'} but is not installed")
+
+        for manager, lockfile in (
+            ("pnpm", "pnpm-lock.yaml"),
+            ("yarn", "yarn.lock"),
+            ("npm", "package-lock.json"),
+            ("npm", "npm-shrinkwrap.json"),
+        ):
+            if (root / lockfile).exists():
+                if manager == "npm" or self.system_service.command_exists(manager):
+                    return manager
+                raise ValidationError(f"{manager} lockfile detected in {root} but {manager} is not installed")
+
+        if self.system_service.command_exists("npm"):
+            return "npm"
+        raise ValidationError(f"No supported package manager found for {root}")
+
+    def install_dependencies(self, root: Path) -> None:
+        package_manager = self.package_manager(root)
+        self.system_service.run([package_manager, "install"], cwd=root)
 
     def build_if_present(self, root: Path) -> None:
         package_data = self._load_package_json(root)
         scripts = package_data.get("scripts")
         if isinstance(scripts, dict) and "build" in scripts:
-            self.system_service.run(["npm", "run", "build"], cwd=root)
+            package_manager = self.package_manager(root)
+            self.system_service.run([package_manager, "run", "build"], cwd=root)
 
     def pm2_process_exists(self, pm2_name: str) -> bool:
         completed = self.system_service.run(["pm2", "jlist"], check=False)
@@ -46,12 +73,12 @@ class PM2Service:
         if self.pm2_process_exists(pm2_name):
             self.system_service.run(["pm2", "restart", pm2_name, "--update-env"], cwd=root, env=env)
             return
+        package_manager = self.package_manager(root)
         self.system_service.run(
-            ["pm2", "start", "npm", "--name", pm2_name, "--", "run", "start"],
+            ["pm2", "start", package_manager, "--name", pm2_name, "--", "run", "start"],
             cwd=root,
             env=env,
         )
 
     def delete_process(self, pm2_name: str) -> None:
         self.system_service.run(["pm2", "delete", pm2_name])
-

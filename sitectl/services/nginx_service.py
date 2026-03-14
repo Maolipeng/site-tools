@@ -152,25 +152,32 @@ class NginxService:
         config_path = self.config_path(snapshot.domain)
         enabled_path = self.enabled_path(snapshot.domain)
 
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        enabled_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            enabled_path.parent.mkdir(parents=True, exist_ok=True)
 
-        if snapshot.config_exists and snapshot.config_content is not None:
-            config_path.write_text(snapshot.config_content, encoding="utf-8")
-        elif config_path.exists():
-            config_path.unlink()
+            if snapshot.config_exists and snapshot.config_content is not None:
+                config_path.write_text(snapshot.config_content, encoding="utf-8")
+            elif config_path.exists():
+                config_path.unlink()
 
-        if enabled_path.is_symlink() or enabled_path.exists():
-            enabled_path.unlink()
+            if enabled_path.is_symlink() or enabled_path.exists():
+                enabled_path.unlink()
 
-        if snapshot.enabled_exists and snapshot.enabled_target:
-            enabled_path.symlink_to(Path(snapshot.enabled_target))
+            if snapshot.enabled_exists and snapshot.enabled_target:
+                enabled_path.symlink_to(Path(snapshot.enabled_target))
+        except OSError as exc:
+            raise NginxConfigError(f"Failed to restore Nginx snapshot for {snapshot.domain}: {exc}") from exc
 
     def validate_nginx_config(self) -> None:
         try:
             self.system_service.run(["nginx", "-t"])
         except CommandExecutionError as exc:
             raise NginxConfigError(str(exc)) from exc
+
+    def _is_not_running_reload_error(self, exc: CommandExecutionError) -> bool:
+        stderr = (exc.stderr or "").lower()
+        return "invalid pid number" in stderr or ("open() " in stderr and ".pid" in stderr)
 
     def reload_nginx(self, *, validate_first: bool = True) -> None:
         if validate_first:
@@ -184,6 +191,8 @@ class NginxService:
         try:
             self.system_service.run(["nginx", "-s", "reload"])
         except CommandExecutionError as exc:
+            if self._is_not_running_reload_error(exc):
+                return
             raise NginxConfigError(str(exc)) from exc
 
     def list_available_domains(self) -> list[str]:

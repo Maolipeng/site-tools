@@ -21,6 +21,12 @@ Then branch by runtime:
 - `sitectl doctor --domain DOMAIN --type proxy --port PORT --upstream-host ::1 --listen-ipv6`
 - `sitectl reload --dry-run`
 
+If the host is using Homebrew Nginx or another non-`/etc/nginx` layout:
+
+1. Run `sitectl doctor` first and inspect the detected `nginx.conf` path and related directories
+2. Prefer the auto-detected layout over manually forcing `/etc/nginx/...`
+3. Only set `SITECTL_NGINX_*` overrides when the install path is custom or intentionally different from the detected layout
+
 ## Certificate-specific checks
 
 - `sitectl cert-info DOMAIN`

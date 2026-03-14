@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import sitectl.config as config_module
 from sitectl.cli import build_parser, main
 from sitectl.config import SiteCtlConfig
 from sitectl.exceptions import ValidationError
@@ -252,6 +253,33 @@ class CliTestCase(unittest.TestCase):
             ):
                 config = SiteCtlConfig.from_env()
                 self.assertEqual(config.state_file, state_file)
+
+    def test_config_from_env_detects_homebrew_nginx_layout(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            layout = config_module.NginxLayout(
+                available_dir=temp_path / "opt" / "homebrew" / "etc" / "nginx" / "sites-available",
+                enabled_dir=temp_path / "opt" / "homebrew" / "etc" / "nginx" / "sites-enabled",
+                snippets_dir=temp_path / "opt" / "homebrew" / "etc" / "nginx" / "snippets",
+                main_config=temp_path / "opt" / "homebrew" / "etc" / "nginx" / "nginx.conf",
+                log_dir=temp_path / "opt" / "homebrew" / "var" / "log" / "nginx",
+            )
+            layout.main_config.parent.mkdir(parents=True, exist_ok=True)
+            layout.main_config.write_text("events {}", encoding="utf-8")
+            with patch.object(config_module, "NGINX_LAYOUT_CANDIDATES", (layout,)):
+                with patch.dict("os.environ", {}, clear=True):
+                    config = SiteCtlConfig.from_env()
+            self.assertEqual(config.nginx_main_config, layout.main_config)
+            self.assertEqual(config.nginx_available_dir, layout.available_dir)
+            self.assertEqual(config.nginx_enabled_dir, layout.enabled_dir)
+            self.assertEqual(config.nginx_snippets_dir, layout.snippets_dir)
+            self.assertEqual(config.log_dir, layout.log_dir)
+
+    def test_config_from_env_uses_macos_state_file_default(self) -> None:
+        with patch.object(config_module, "resolve_state_file", return_value=Path("/Users/test/Library/Application Support/sitectl/sites.json")):
+            with patch.dict("os.environ", {}, clear=True):
+                config = SiteCtlConfig.from_env()
+        self.assertEqual(config.state_file, Path("/Users/test/Library/Application Support/sitectl/sites.json"))
 
 
 if __name__ == "__main__":
