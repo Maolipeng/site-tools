@@ -45,6 +45,10 @@ exit 1
         )
         path.chmod(0o755)
 
+    def _write_noop_command(self, path: Path, content: str = "exit 0\n") -> None:
+        path.write_text(f"#!/usr/bin/env bash\nset -euo pipefail\n{content}", encoding="utf-8")
+        path.chmod(0o755)
+
     def test_install_script_prints_zshrc_path_hint_for_venv_mode(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             venv_dir = Path(temp_dir) / "venv"
@@ -183,6 +187,91 @@ printf 'npm %s\\n' "$*" >> "{install_log}"
             self.assertIn("apt-get update", log_lines)
             self.assertIn("apt-get install -y nginx certbot python3-certbot-nginx nodejs npm", log_lines)
             self.assertIn("npm install -g pm2", log_lines)
+            self.assertIn(f"Command path: {venv_dir}/bin/sitectl", completed.stdout)
+
+    def test_install_script_auto_installs_python311_when_only_python310_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            fake_bin = temp_path / "bin"
+            fake_bin.mkdir()
+            install_log = temp_path / "install.log"
+
+            self._write_fake_python(fake_bin / "python3", "3.10.9")
+            for command in ("nginx", "certbot", "openssl", "node", "npm", "pm2"):
+                self._write_noop_command(fake_bin / command)
+
+            python311_template = """#!/usr/bin/env bash
+set -euo pipefail
+version="3.11.9"
+
+if [[ "${1:-}" == "-V" ]]; then
+  echo "Python $version"
+  exit 0
+fi
+
+if [[ "${1:-}" == "-" ]]; then
+  exit 0
+fi
+
+if [[ "${1:-}" == "-m" && "${2:-}" == "venv" ]]; then
+  venv_dir="${3:?missing venv path}"
+  mkdir -p "$venv_dir/bin"
+  cp "$0" "$venv_dir/bin/python"
+  chmod +x "$venv_dir/bin/python"
+  exit 0
+fi
+
+echo "unexpected invocation: $*" >&2
+exit 1
+"""
+            (fake_bin / "apt-get").write_text(
+                f"""#!/usr/bin/env bash
+set -euo pipefail
+printf 'apt-get %s\\n' "$*" >> "{install_log}"
+if [[ "$*" == "install -y python3.11 python3.11-venv" ]]; then
+cat > "{fake_bin / 'python3.11'}" <<'EOF'
+{python311_template}
+EOF
+chmod +x "{fake_bin / 'python3.11'}"
+fi
+""",
+                encoding="utf-8",
+            )
+            (fake_bin / "sudo").write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+"$@"
+""",
+                encoding="utf-8",
+            )
+            (fake_bin / "apt-get").chmod(0o755)
+            (fake_bin / "sudo").chmod(0o755)
+
+            venv_dir = temp_path / "venv"
+            env = os.environ.copy()
+            env["PATH"] = f"{fake_bin}:/usr/bin:/bin"
+            env.pop("PYTHON_BIN", None)
+            completed = subprocess.run(
+                [
+                    "bash",
+                    str(INSTALL_SCRIPT),
+                    "--venv",
+                    str(venv_dir),
+                    "--no-test",
+                ],
+                cwd=REPO_ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            log_lines = install_log.read_text(encoding="utf-8").splitlines()
+            self.assertIn("No usable Python 3.11+ detected; attempting automatic installation", completed.stdout)
+            self.assertIn("Installing system packages via apt: python3.11 python3.11-venv", completed.stdout)
+            self.assertIn("Using auto-installed Python interpreter: python3.11", completed.stdout)
+            self.assertIn("apt-get update", log_lines)
+            self.assertIn("apt-get install -y python3.11 python3.11-venv", log_lines)
             self.assertIn(f"Command path: {venv_dir}/bin/sitectl", completed.stdout)
 
 

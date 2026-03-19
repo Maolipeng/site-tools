@@ -171,6 +171,18 @@ detect_package_manager() {
   printf '%s\n' "unknown"
 }
 
+supported_python_candidate() {
+  local candidates=(python3 python3.13 python3.12 python3.11)
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if command_exists "$candidate" && python_version_supported "$candidate"; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
 install_system_packages() {
   local package_manager="$1"
   shift
@@ -342,6 +354,29 @@ raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
 PY
 }
 
+install_python_runtime() {
+  local package_manager="$1"
+  local packages=()
+
+  case "$package_manager" in
+    apt)
+      packages=(python3.11 python3.11-venv)
+      ;;
+    dnf|yum)
+      packages=(python3.11)
+      ;;
+    brew)
+      packages=(python@3.11)
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+
+  log_info "No usable Python 3.11+ detected; attempting automatic installation"
+  install_system_packages "$package_manager" "${packages[@]}"
+}
+
 select_python_bin() {
   log_step "Selecting Python interpreter"
   if [[ -n "$PYTHON_BIN" ]]; then
@@ -359,15 +394,24 @@ select_python_bin() {
     return
   fi
 
-  local candidates=(python3 python3.13 python3.12 python3.11)
   local candidate
-  for candidate in "${candidates[@]}"; do
-    if command -v "$candidate" >/dev/null 2>&1 && python_version_supported "$candidate"; then
-      PYTHON_BIN="$candidate"
-      log_info "Using detected Python interpreter: $PYTHON_BIN"
-      return
+  if candidate="$(supported_python_candidate)"; then
+    PYTHON_BIN="$candidate"
+    log_info "Using detected Python interpreter: $PYTHON_BIN"
+    return
+  fi
+
+  if [[ "${AUTO_INSTALL_DEPS}" != "0" ]]; then
+    local package_manager
+    package_manager="$(detect_package_manager)"
+    if install_python_runtime "$package_manager"; then
+      if candidate="$(supported_python_candidate)"; then
+        PYTHON_BIN="$candidate"
+        log_info "Using auto-installed Python interpreter: $PYTHON_BIN"
+        return
+      fi
     fi
-  done
+  fi
 
   local detected_version="not found"
   if command -v python3 >/dev/null 2>&1; then

@@ -61,6 +61,7 @@ cd /path/to/site-tools
 默认行为：
 
 - 创建本地虚拟环境 `.venv`
+- 检测 Python 解释器；如果系统只有旧版 `python3`，会尝试自动安装 `Python 3.11+`
 - 检测缺少的系统依赖，并尝试自动安装常见依赖（如 `nginx`、`certbot`、`openssl`、`node`、`npm`、`pm2`）
 - 生成可直接运行的 `sitectl` 启动器
 - 自动执行一次 `sitectl --help` smoke test
