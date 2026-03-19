@@ -66,6 +66,11 @@ class CliTestCase(unittest.TestCase):
         args = parser.parse_args(["doctor"])
         self.assertEqual(args.command, "doctor")
 
+    def test_build_parser_parses_interactive_command(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["interactive"])
+        self.assertEqual(args.command, "interactive")
+
     def test_build_parser_parses_doctor_ipv6_hint_arguments(self) -> None:
         parser = build_parser()
         args = parser.parse_args(

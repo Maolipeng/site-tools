@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import argparse
 import json
+import io
 import socket
 import subprocess
 import tempfile
@@ -22,6 +24,7 @@ from sitectl.services.pm2_service import PM2Service
 from sitectl.services.site_service import SiteService
 from sitectl.services.status_service import StatusService
 from sitectl.services.systemd_service import SystemdService
+from sitectl.commands import interactive as interactive_command
 
 
 class FakeSystemService:
@@ -163,6 +166,14 @@ class SiteServiceIntegrationTestCase(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
+
+    def test_interactive_command_exits_cleanly(self) -> None:
+        with patch("builtins.input", side_effect=["0"]), patch("sys.stdout", new_callable=io.StringIO) as stdout:
+            exit_code = interactive_command.run(argparse.Namespace(), self.site_service)
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("sitectl interactive", stdout.getvalue())
+        self.assertIn("Exiting.", stdout.getvalue())
 
     def test_create_proxy_site_writes_config_state_and_invokes_services(self) -> None:
         record = self.site_service.create_site(

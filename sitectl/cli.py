@@ -14,6 +14,7 @@ from sitectl.commands import export_sites as export_command
 from sitectl.commands import healthcheck as healthcheck_command
 from sitectl.commands import history as history_command
 from sitectl.commands import import_sites as import_command
+from sitectl.commands import interactive as interactive_command
 from sitectl.commands import list_sites as list_command
 from sitectl.commands import logs as logs_command
 from sitectl.commands import reload as reload_command
@@ -175,6 +176,9 @@ def build_parser() -> argparse.ArgumentParser:
     doctor_parser.add_argument("--email", help="Optional email used in HTTPS readiness suggestions.")
     doctor_parser.add_argument("--ssl-mode", choices=["letsencrypt", "manual"], default="letsencrypt", help="Optional TLS mode used in doctor suggestions.")
     doctor_parser.set_defaults(handler=doctor_command.run)
+
+    interactive_parser = subparsers.add_parser("interactive", help="Run the interactive terminal menu.")
+    interactive_parser.set_defaults(handler=interactive_command.run)
     return parser
 
 
