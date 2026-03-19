@@ -7,6 +7,7 @@ INSTALL_MODE="venv"
 EDITABLE=1
 RUN_SMOKE_TEST=1
 AUTO_INSTALL_DEPS="${AUTO_INSTALL_DEPS:-1}"
+INTERACTIVE_MODE=0
 VENV_DIR="${VENV_DIR:-$PROJECT_DIR/.venv}"
 TOTAL_STEPS=6
 CURRENT_STEP=0
@@ -23,6 +24,7 @@ Options:
   --no-test       Skip the final "sitectl --help" smoke test.
   --no-install-deps
                   Skip auto-installing missing system dependencies.
+  --interactive   Prompt for installation choices in the terminal.
   --python PATH   Use a specific Python interpreter.
   -h, --help      Show this help message.
 
@@ -41,6 +43,93 @@ log_step() {
 
 log_info() {
   printf '      %s\n' "$1"
+}
+
+prompt_read() {
+  local prompt_text="$1"
+  local response
+  printf '%s' "$prompt_text" >/dev/tty
+  IFS= read -r response </dev/tty
+  printf '%s' "$response"
+}
+
+prompt_with_default() {
+  local label="$1"
+  local current="$2"
+  local response
+  response="$(prompt_read "$label [$current]: ")"
+  if [[ -z "$response" ]]; then
+    printf '%s\n' "$current"
+  else
+    printf '%s\n' "$response"
+  fi
+}
+
+prompt_yes_no() {
+  local label="$1"
+  local current="$2"
+  local default_hint="Y/n"
+  if [[ "$current" == "0" ]]; then
+    default_hint="y/N"
+  fi
+
+  while true; do
+    local response
+    response="$(prompt_read "$label [$default_hint]: ")"
+    if [[ -z "$response" ]]; then
+      printf '%s\n' "$current"
+      return
+    fi
+    case "${response,,}" in
+      y|yes)
+        printf '1\n'
+        return
+        ;;
+      n|no)
+        printf '0\n'
+        return
+        ;;
+    esac
+    printf 'Please answer y or n.\n' >/dev/tty
+  done
+}
+
+run_interactive_setup() {
+  if [[ ! -r /dev/tty || ! -w /dev/tty ]]; then
+    echo "Interactive mode requires a terminal." >&2
+    exit 1
+  fi
+
+  log_step "Collecting interactive installation choices"
+  log_info "Interactive mode enabled"
+
+  local mode_default="$INSTALL_MODE"
+  while true; do
+    INSTALL_MODE="$(prompt_with_default "Installation mode (venv/user/system)" "$mode_default")"
+    case "$INSTALL_MODE" in
+      venv|user|system)
+        break
+        ;;
+    esac
+    printf 'Please choose one of: venv, user, system.\n' >/dev/tty
+  done
+
+  if [[ "$INSTALL_MODE" == "venv" ]]; then
+    VENV_DIR="$(prompt_with_default "Virtual environment path" "$VENV_DIR")"
+  fi
+
+  EDITABLE="$(prompt_yes_no "Install in editable mode?" "$EDITABLE")"
+  AUTO_INSTALL_DEPS="$(prompt_yes_no "Auto-install missing system dependencies?" "$AUTO_INSTALL_DEPS")"
+  RUN_SMOKE_TEST="$(prompt_yes_no "Run final smoke test?" "$RUN_SMOKE_TEST")"
+
+  local python_default="${PYTHON_BIN:-auto-detect}"
+  local python_choice
+  python_choice="$(prompt_with_default "Python interpreter" "$python_default")"
+  if [[ "$python_choice" == "auto-detect" ]]; then
+    PYTHON_BIN=""
+  else
+    PYTHON_BIN="$python_choice"
+  fi
 }
 
 command_exists() {
@@ -321,6 +410,10 @@ while [[ $# -gt 0 ]]; do
       AUTO_INSTALL_DEPS=0
       shift
       ;;
+    --interactive)
+      INTERACTIVE_MODE=1
+      shift
+      ;;
     --python)
       PYTHON_BIN="$2"
       shift 2
@@ -336,6 +429,10 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "$INTERACTIVE_MODE" -eq 1 ]]; then
+  run_interactive_setup
+fi
 
 ensure_system_dependencies
 select_python_bin

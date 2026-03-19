@@ -73,6 +73,18 @@ exit 1
         self.assertIn("[5/6] Skipping smoke test", completed.stdout)
         self.assertIn("[6/6] Finishing installation", completed.stdout)
 
+    def test_install_script_help_mentions_interactive_mode(self) -> None:
+        completed = subprocess.run(
+            ["bash", str(INSTALL_SCRIPT), "--help"],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+
+        self.assertIn("--interactive", completed.stdout)
+        self.assertIn("Prompt for installation choices in the terminal", completed.stdout)
+
     def test_install_script_falls_back_to_python311_when_python3_is_too_old(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)

@@ -79,6 +79,7 @@ cd /path/to/site-tools
 ./install.sh --venv /opt/sitectl-venv
 ./install.sh --no-editable
 ./install.sh --no-install-deps
+./install.sh --interactive
 ```
 
 说明：
@@ -94,6 +95,12 @@ cd /path/to/site-tools
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Maolipeng/site-tools/main/install.remote.sh | bash
+```
+
+交互式安装：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Maolipeng/site-tools/main/install.remote.sh | bash -s -- --interactive
 ```
 
 直接指定源码压缩包：
