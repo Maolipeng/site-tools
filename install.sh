@@ -6,7 +6,10 @@ PYTHON_BIN="${PYTHON_BIN:-}"
 INSTALL_MODE="venv"
 EDITABLE=1
 RUN_SMOKE_TEST=1
+AUTO_INSTALL_DEPS="${AUTO_INSTALL_DEPS:-1}"
 VENV_DIR="${VENV_DIR:-$PROJECT_DIR/.venv}"
+TOTAL_STEPS=6
+CURRENT_STEP=0
 
 usage() {
   cat <<'EOF'
@@ -18,13 +21,228 @@ Options:
   --venv PATH     Create/use a virtual environment at PATH (default: ./.venv).
   --no-editable   Install the package normally instead of editable mode.
   --no-test       Skip the final "sitectl --help" smoke test.
+  --no-install-deps
+                  Skip auto-installing missing system dependencies.
   --python PATH   Use a specific Python interpreter.
   -h, --help      Show this help message.
 
 Environment overrides:
   PYTHON_BIN      Python interpreter to use.
   VENV_DIR        Virtual environment path when using venv mode.
+  AUTO_INSTALL_DEPS
+                  Set to 0 to disable auto-installing missing system dependencies.
 EOF
+}
+
+log_step() {
+  CURRENT_STEP=$((CURRENT_STEP + 1))
+  printf '[%d/%d] %s\n' "$CURRENT_STEP" "$TOTAL_STEPS" "$1"
+}
+
+log_info() {
+  printf '      %s\n' "$1"
+}
+
+command_exists() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+run_with_privilege() {
+  if [[ "$(id -u)" -eq 0 ]]; then
+    "$@"
+    return
+  fi
+  if command_exists sudo; then
+    log_info "Requesting sudo privileges for: $*"
+    log_info "If prompted, enter your sudo password to continue"
+    sudo "$@"
+    return
+  fi
+  echo "Need root privileges to install system dependencies: $*" >&2
+  exit 1
+}
+
+detect_package_manager() {
+  if command_exists apt-get; then
+    printf '%s\n' "apt"
+    return
+  fi
+  if command_exists dnf; then
+    printf '%s\n' "dnf"
+    return
+  fi
+  if command_exists yum; then
+    printf '%s\n' "yum"
+    return
+  fi
+  if command_exists brew; then
+    printf '%s\n' "brew"
+    return
+  fi
+  printf '%s\n' "unknown"
+}
+
+install_system_packages() {
+  local package_manager="$1"
+  shift
+  local packages=("$@")
+  if [[ "${#packages[@]}" -eq 0 ]]; then
+    return
+  fi
+
+  log_info "Installing system packages via $package_manager: ${packages[*]}"
+
+  case "$package_manager" in
+    apt)
+      run_with_privilege apt-get update
+      run_with_privilege apt-get install -y "${packages[@]}"
+      ;;
+    dnf)
+      run_with_privilege dnf install -y "${packages[@]}"
+      ;;
+    yum)
+      run_with_privilege yum install -y "${packages[@]}"
+      ;;
+    brew)
+      brew install "${packages[@]}"
+      ;;
+    *)
+      echo "Unable to auto-install packages because no supported package manager was found." >&2
+      exit 1
+      ;;
+  esac
+}
+
+ensure_pm2_installed() {
+  if command_exists pm2; then
+    return
+  fi
+
+  if ! command_exists npm; then
+    echo "npm is required to install pm2 automatically." >&2
+    exit 1
+  fi
+
+  log_info "Installing pm2 globally with npm"
+
+  if [[ "$(id -u)" -eq 0 ]]; then
+    npm install -g pm2
+    return
+  fi
+  if command_exists sudo; then
+    log_info "Requesting sudo privileges for: npm install -g pm2"
+    log_info "If prompted, enter your sudo password to continue"
+    sudo npm install -g pm2
+    return
+  fi
+
+  echo "Need root privileges to install pm2 globally with npm." >&2
+  exit 1
+}
+
+ensure_system_dependencies() {
+  log_step "Checking system dependencies"
+  if [[ "${AUTO_INSTALL_DEPS}" == "0" ]]; then
+    log_info "Auto-install disabled; skipping system dependency installation"
+    return
+  fi
+
+  local missing_commands=()
+  local command_name
+  for command_name in nginx certbot openssl node npm pm2; do
+    if ! command_exists "$command_name"; then
+      missing_commands+=("$command_name")
+    fi
+  done
+
+  if [[ "${#missing_commands[@]}" -eq 0 ]]; then
+    log_info "All required system dependencies are already available"
+    return
+  fi
+
+  echo "Missing system dependencies detected: ${missing_commands[*]}"
+
+  local package_manager
+  package_manager="$(detect_package_manager)"
+  local packages=()
+  local need_pm2=0
+  local is_linux=0
+  if [[ "$(uname -s)" == "Linux" ]]; then
+    is_linux=1
+  fi
+
+  local has_node=0
+  local has_certbot=0
+  local has_openssl=0
+  local has_nginx=0
+  local has_ip=0
+  local need_systemd_tools=0
+
+  for command_name in "${missing_commands[@]}"; do
+    case "$command_name" in
+      nginx)
+        has_nginx=1
+        ;;
+      certbot)
+        has_certbot=1
+        ;;
+      openssl)
+        has_openssl=1
+        ;;
+      node|npm)
+        has_node=1
+        ;;
+      pm2)
+        need_pm2=1
+        ;;
+    esac
+  done
+
+  if [[ "$is_linux" -eq 1 ]]; then
+    if ! command_exists ip; then
+      has_ip=1
+    fi
+    if [[ -d /run/systemd/system ]] && { ! command_exists systemctl || ! command_exists journalctl; }; then
+      need_systemd_tools=1
+    fi
+  fi
+
+  case "$package_manager" in
+    apt)
+      [[ "$has_nginx" -eq 1 ]] && packages+=(nginx)
+      if [[ "$has_certbot" -eq 1 ]]; then
+        packages+=(certbot python3-certbot-nginx)
+      fi
+      [[ "$has_openssl" -eq 1 ]] && packages+=(openssl)
+      [[ "$has_node" -eq 1 ]] && packages+=(nodejs npm)
+      [[ "$has_ip" -eq 1 ]] && packages+=(iproute2)
+      [[ "$need_systemd_tools" -eq 1 ]] && packages+=(systemd)
+      ;;
+    dnf|yum)
+      [[ "$has_nginx" -eq 1 ]] && packages+=(nginx)
+      if [[ "$has_certbot" -eq 1 ]]; then
+        packages+=(certbot python3-certbot-nginx)
+      fi
+      [[ "$has_openssl" -eq 1 ]] && packages+=(openssl)
+      [[ "$has_node" -eq 1 ]] && packages+=(nodejs npm)
+      [[ "$has_ip" -eq 1 ]] && packages+=(iproute)
+      [[ "$need_systemd_tools" -eq 1 ]] && packages+=(systemd)
+      ;;
+    brew)
+      [[ "$has_nginx" -eq 1 ]] && packages+=(nginx)
+      [[ "$has_certbot" -eq 1 ]] && packages+=(certbot)
+      [[ "$has_openssl" -eq 1 ]] && packages+=(openssl)
+      [[ "$has_node" -eq 1 ]] && packages+=(node)
+      ;;
+  esac
+
+  if [[ "${#packages[@]}" -gt 0 ]]; then
+    install_system_packages "$package_manager" "${packages[@]}"
+  fi
+  if [[ "$need_pm2" -eq 1 ]]; then
+    ensure_pm2_installed
+  fi
+  log_info "System dependency installation finished"
 }
 
 python_version_supported() {
@@ -36,6 +254,7 @@ PY
 }
 
 select_python_bin() {
+  log_step "Selecting Python interpreter"
   if [[ -n "$PYTHON_BIN" ]]; then
     if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
       echo "Python interpreter not found: $PYTHON_BIN" >&2
@@ -47,6 +266,7 @@ select_python_bin() {
       echo "${detected_version:-$PYTHON_BIN} is too old. Python 3.11+ is required." >&2
       exit 1
     fi
+    log_info "Using explicit Python interpreter: $PYTHON_BIN"
     return
   fi
 
@@ -55,6 +275,7 @@ select_python_bin() {
   for candidate in "${candidates[@]}"; do
     if command -v "$candidate" >/dev/null 2>&1 && python_version_supported "$candidate"; then
       PYTHON_BIN="$candidate"
+      log_info "Using detected Python interpreter: $PYTHON_BIN"
       return
     fi
   done
@@ -96,6 +317,10 @@ while [[ $# -gt 0 ]]; do
       RUN_SMOKE_TEST=0
       shift
       ;;
+    --no-install-deps)
+      AUTO_INSTALL_DEPS=0
+      shift
+      ;;
     --python)
       PYTHON_BIN="$2"
       shift 2
@@ -112,11 +337,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+ensure_system_dependencies
 select_python_bin
 
 ensure_pip() {
   local python_bin="$1"
   if ! "$python_bin" -m pip --version >/dev/null 2>&1; then
+    log_info "pip not found for $python_bin; bootstrapping with ensurepip"
     "$python_bin" -m ensurepip --upgrade >/dev/null
   fi
 }
@@ -135,6 +362,11 @@ EOF
 
 install_package() {
   local python_bin="$1"
+  if [[ "$EDITABLE" -eq 1 ]]; then
+    log_info "Installing sitectl in editable mode with $python_bin"
+  else
+    log_info "Installing sitectl in standard mode with $python_bin"
+  fi
   if [[ "$EDITABLE" -eq 1 ]]; then
     "$python_bin" -m pip install --no-build-isolation -e "$PROJECT_DIR"
   else
@@ -162,12 +394,15 @@ print_path_hint() {
 }
 
 if [[ "$INSTALL_MODE" == "venv" ]]; then
+  log_step "Creating virtual environment"
+  log_info "Virtual environment path: $VENV_DIR"
   "$PYTHON_BIN" -m venv "$VENV_DIR"
   VENV_PYTHON="$VENV_DIR/bin/python"
   SITECTL_BIN="$VENV_DIR/bin/sitectl"
   if [[ "$EDITABLE" -eq 1 ]]; then
     SOURCE_ROOT="$PROJECT_DIR"
   else
+    log_step "Copying package sources into the virtual environment"
     SITE_PACKAGES="$("$VENV_PYTHON" - <<'PY'
 import sysconfig
 print(sysconfig.get_path("purelib"))
@@ -185,10 +420,18 @@ shutil.copytree(project_dir / "sitectl", site_packages / "sitectl", dirs_exist_o
 PY
     SOURCE_ROOT="$SITE_PACKAGES"
   fi
+  if [[ "$EDITABLE" -eq 1 ]]; then
+    log_step "Linking launcher to the project source tree"
+  fi
   write_launcher "$SITECTL_BIN" "$VENV_PYTHON" "$SOURCE_ROOT"
   if [[ "$RUN_SMOKE_TEST" -eq 1 ]]; then
+    log_step "Running smoke test"
+    log_info "Executing: $SITECTL_BIN --help"
     "$SITECTL_BIN" --help >/dev/null
+  else
+    log_step "Skipping smoke test"
   fi
+  log_step "Finishing installation"
   print_success "$SITECTL_BIN"
   print_path_hint "$VENV_DIR/bin"
   echo
@@ -197,7 +440,9 @@ PY
   exit 0
 fi
 
+log_step "Preparing Python package installation"
 ensure_pip "$PYTHON_BIN"
+log_step "Installing Python package"
 install_package "$PYTHON_BIN"
 
 if [[ "$INSTALL_MODE" == "user" ]]; then
@@ -211,13 +456,19 @@ else
 fi
 
 if [[ "$RUN_SMOKE_TEST" -eq 1 ]]; then
+  log_step "Running smoke test"
   if [[ -x "$SITECTL_BIN" ]]; then
+    log_info "Executing: $SITECTL_BIN --help"
     "$SITECTL_BIN" --help >/dev/null
   else
+    log_info "Executing: $PYTHON_BIN -m sitectl --help"
     "$PYTHON_BIN" -m sitectl --help >/dev/null
   fi
+else
+  log_step "Skipping smoke test"
 fi
 
+log_step "Finishing installation"
 print_success "$SITECTL_BIN"
 
 if [[ "$INSTALL_MODE" == "user" ]]; then

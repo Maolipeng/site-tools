@@ -61,6 +61,7 @@ cd /path/to/site-tools
 默认行为：
 
 - 创建本地虚拟环境 `.venv`
+- 检测缺少的系统依赖，并尝试自动安装常见依赖（如 `nginx`、`certbot`、`openssl`、`node`、`npm`、`pm2`）
 - 生成可直接运行的 `sitectl` 启动器
 - 自动执行一次 `sitectl --help` smoke test
 
@@ -77,6 +78,7 @@ cd /path/to/site-tools
 ./install.sh --system
 ./install.sh --venv /opt/sitectl-venv
 ./install.sh --no-editable
+./install.sh --no-install-deps
 ```
 
 说明：
