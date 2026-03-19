@@ -49,9 +49,13 @@ exit 1
         path.write_text(f"#!/usr/bin/env bash\nset -euo pipefail\n{content}", encoding="utf-8")
         path.chmod(0o755)
 
-    def test_install_script_prints_zshrc_path_hint_for_venv_mode(self) -> None:
+    def test_install_script_updates_detected_shell_profile_for_venv_mode(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            venv_dir = Path(temp_dir) / "venv"
+            temp_path = Path(temp_dir)
+            venv_dir = temp_path / "venv"
+            home_dir = temp_path / "home"
+            home_dir.mkdir()
+            bashrc = home_dir / ".bashrc"
             completed = subprocess.run(
                 [
                     "bash",
@@ -61,21 +65,54 @@ exit 1
                     "--no-test",
                 ],
                 cwd=REPO_ROOT,
-                env={**os.environ, "AUTO_INSTALL_DEPS": "0"},
+                env={**os.environ, "AUTO_INSTALL_DEPS": "0", "HOME": str(home_dir), "SHELL": "/bin/bash"},
                 text=True,
                 capture_output=True,
                 check=True,
             )
 
-        self.assertIn("To add 'sitectl' to your zsh PATH permanently", completed.stdout)
-        self.assertIn("# site-tools", completed.stdout)
-        self.assertIn(f'export PATH="{venv_dir}/bin:$PATH"', completed.stdout)
-        self.assertIn("[1/6] Checking system dependencies", completed.stdout)
-        self.assertIn("[2/6] Selecting Python interpreter", completed.stdout)
-        self.assertIn("[3/6] Creating virtual environment", completed.stdout)
-        self.assertIn("[4/6] Linking launcher to the project source tree", completed.stdout)
-        self.assertIn("[5/6] Skipping smoke test", completed.stdout)
-        self.assertIn("[6/6] Finishing installation", completed.stdout)
+            self.assertTrue(bashrc.exists())
+            bashrc_text = bashrc.read_text(encoding="utf-8")
+            self.assertIn("# site-tools", bashrc_text)
+            self.assertIn(f'export PATH="{venv_dir}/bin:$PATH"', bashrc_text)
+            self.assertIn(f"Added sitectl to PATH in {bashrc}", completed.stdout)
+            self.assertIn(f"Shell profile: {bashrc}", completed.stdout)
+            self.assertIn(f'export PATH="{venv_dir}/bin:$PATH"', completed.stdout)
+            self.assertIn("[1/6] Checking system dependencies", completed.stdout)
+            self.assertIn("[2/6] Selecting Python interpreter", completed.stdout)
+            self.assertIn("[3/6] Creating virtual environment", completed.stdout)
+            self.assertIn("[4/6] Linking launcher to the project source tree", completed.stdout)
+            self.assertIn("[5/6] Skipping smoke test", completed.stdout)
+            self.assertIn("[6/6] Finishing installation", completed.stdout)
+
+    def test_install_script_does_not_duplicate_path_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            venv_dir = temp_path / "venv"
+            home_dir = temp_path / "home"
+            home_dir.mkdir()
+            bashrc = home_dir / ".bashrc"
+            existing_line = f'export PATH="{venv_dir}/bin:$PATH"'
+            bashrc.write_text(f"# site-tools\n{existing_line}\n", encoding="utf-8")
+
+            completed = subprocess.run(
+                [
+                    "bash",
+                    str(INSTALL_SCRIPT),
+                    "--venv",
+                    str(venv_dir),
+                    "--no-test",
+                ],
+                cwd=REPO_ROOT,
+                env={**os.environ, "AUTO_INSTALL_DEPS": "0", "HOME": str(home_dir), "SHELL": "/bin/bash"},
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            bashrc_text = bashrc.read_text(encoding="utf-8")
+            self.assertEqual(bashrc_text.count(existing_line), 1)
+            self.assertIn(f"PATH already contains a sitectl entry in {bashrc}", completed.stdout)
 
     def test_install_script_help_mentions_interactive_mode(self) -> None:
         completed = subprocess.run(

@@ -526,12 +526,76 @@ print_success() {
   echo "  $sitectl_bin doctor"
 }
 
+detect_shell_profile() {
+  local shell_name="${SHELL##*/}"
+  if [[ -z "$shell_name" ]]; then
+    shell_name="sh"
+  fi
+
+  case "$shell_name" in
+    zsh)
+      printf '%s\n' "$HOME/.zshrc"
+      ;;
+    bash)
+      if [[ -f "$HOME/.bashrc" || ! -f "$HOME/.bash_profile" ]]; then
+        printf '%s\n' "$HOME/.bashrc"
+      else
+        printf '%s\n' "$HOME/.bash_profile"
+      fi
+      ;;
+    fish)
+      printf '%s\n' "$HOME/.config/fish/config.fish"
+      ;;
+    ksh)
+      printf '%s\n' "$HOME/.kshrc"
+      ;;
+    *)
+      printf '%s\n' "$HOME/.profile"
+      ;;
+  esac
+}
+
+append_path_entry() {
+  local path_dir="$1"
+  local shell_name="${SHELL##*/}"
+  local profile_path
+  profile_path="$(detect_shell_profile)"
+  local profile_dir
+  profile_dir="$(dirname "$profile_path")"
+  mkdir -p "$profile_dir"
+  touch "$profile_path"
+
+  if grep -Fq "$path_dir" "$profile_path"; then
+    echo
+    echo "PATH already contains a sitectl entry in $profile_path"
+    return
+  fi
+
+  echo >>"$profile_path"
+  echo "# site-tools" >>"$profile_path"
+  if [[ "$shell_name" == "fish" ]]; then
+    echo "fish_add_path \"$path_dir\"" >>"$profile_path"
+  else
+    echo "export PATH=\"$path_dir:\$PATH\"" >>"$profile_path"
+  fi
+
+  echo
+  echo "Added sitectl to PATH in $profile_path"
+}
+
 print_path_hint() {
   local path_dir="$1"
+  local profile_path
+  profile_path="$(detect_shell_profile)"
   echo
-  echo "To add 'sitectl' to your zsh PATH permanently, append this to ~/.zshrc:"
+  echo "Shell profile: $profile_path"
+  echo "PATH entry:"
   echo "  # site-tools"
-  echo "  export PATH=\"$path_dir:\$PATH\""
+  if [[ "${SHELL##*/}" == "fish" ]]; then
+    echo "  fish_add_path \"$path_dir\""
+  else
+    echo "  export PATH=\"$path_dir:\$PATH\""
+  fi
 }
 
 if [[ "$INSTALL_MODE" == "venv" ]]; then
@@ -574,6 +638,7 @@ PY
   fi
   log_step "Finishing installation"
   print_success "$SITECTL_BIN"
+  append_path_entry "$VENV_DIR/bin"
   print_path_hint "$VENV_DIR/bin"
   echo
   echo "To use 'sitectl' directly in your shell:"
@@ -615,6 +680,6 @@ print_success "$SITECTL_BIN"
 if [[ "$INSTALL_MODE" == "user" ]]; then
   echo
   echo "If '$SITECTL_BIN' is not found, add this to PATH:"
-  echo "  export PATH=\"$USER_BASE/bin:\$PATH\""
+  append_path_entry "$USER_BASE/bin"
   print_path_hint "$USER_BASE/bin"
 fi
