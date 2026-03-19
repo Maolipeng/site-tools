@@ -5,6 +5,7 @@ SITECTL_ARCHIVE_URL="${SITECTL_ARCHIVE_URL:-}"
 SITECTL_REPO_URL="${SITECTL_REPO_URL:-https://github.com/Maolipeng/site-tools}"
 SITECTL_REF="${SITECTL_REF:-main}"
 SITECTL_DOWNLOAD_DIR="${SITECTL_DOWNLOAD_DIR:-}"
+SITECTL_INSTALL_ROOT="${SITECTL_INSTALL_ROOT:-$HOME/.local/share/sitectl}"
 
 usage() {
   cat <<'EOF'
@@ -19,10 +20,16 @@ Environment:
                         Default: https://github.com/Maolipeng/site-tools
   SITECTL_REF           Git ref to download when SITECTL_REPO_URL is used. Default: main
   SITECTL_DOWNLOAD_DIR  Working directory to keep extracted files instead of a temporary directory.
+  SITECTL_INSTALL_ROOT  Persistent root used by the default remote venv install.
+                        Default: $HOME/.local/share/sitectl
 
 Arguments:
   Any arguments after '--' are passed to the inner ./install.sh script.
 EOF
+}
+
+log_step() {
+  printf '%s\n' "$1"
 }
 
 derive_archive_url() {
@@ -55,6 +62,26 @@ download_file() {
   exit 1
 }
 
+build_install_args() {
+  local has_mode=0
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --user|--system|--venv)
+        has_mode=1
+        ;;
+    esac
+  done
+
+  if [[ "$#" -gt 0 ]]; then
+    printf '%s\n' "$@"
+  fi
+  printf '%s\n' --no-editable
+  if [[ "$has_mode" -eq 0 ]]; then
+    printf '%s\n' --venv "$SITECTL_INSTALL_ROOT/venv"
+  fi
+}
+
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   usage
   exit 0
@@ -85,7 +112,9 @@ ARCHIVE_PATH="$WORK_DIR/sitectl.tar.gz"
 EXTRACT_DIR="$WORK_DIR/extract"
 mkdir -p "$EXTRACT_DIR"
 
+log_step "[remote 1/4] Downloading sitectl archive"
 download_file "$SITECTL_ARCHIVE_URL" "$ARCHIVE_PATH"
+log_step "[remote 2/4] Extracting archive"
 tar -xzf "$ARCHIVE_PATH" -C "$EXTRACT_DIR"
 
 PROJECT_DIR="$(find "$EXTRACT_DIR" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
@@ -94,4 +123,14 @@ if [[ -z "$PROJECT_DIR" || ! -f "$PROJECT_DIR/install.sh" ]]; then
   exit 1
 fi
 
-bash "$PROJECT_DIR/install.sh" "$@"
+INSTALL_ARGS=()
+while IFS= read -r line; do
+  INSTALL_ARGS+=("$line")
+done < <(build_install_args "$@")
+if [[ "${#INSTALL_ARGS[@]}" -gt 0 && " ${INSTALL_ARGS[*]} " == *" --venv "* ]]; then
+  log_step "[remote 3/4] Running installer with persistent virtual environment"
+else
+  log_step "[remote 3/4] Running installer"
+fi
+bash "$PROJECT_DIR/install.sh" "${INSTALL_ARGS[@]}"
+log_step "[remote 4/4] Remote installation finished"

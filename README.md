@@ -64,6 +64,7 @@ cd /path/to/site-tools
 - 检测 Python 解释器；如果系统只有旧版 `python3`，会尝试自动安装 `Python 3.11+`
 - 检测缺少的系统依赖，并尝试自动安装常见依赖（如 `nginx`、`certbot`、`openssl`、`node`、`npm`、`pm2`）
 - 生成可直接运行的 `sitectl` 启动器
+- 自动检测当前默认 shell 的配置文件，并追加 `PATH` 配置
 - 自动执行一次 `sitectl --help` smoke test
 
 默认命令路径：
@@ -97,6 +98,14 @@ cd /path/to/site-tools
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Maolipeng/site-tools/main/install.remote.sh | bash
 ```
+
+默认会执行持久化 venv 安装，目录是：
+
+```bash
+~/.local/share/sitectl/venv
+```
+
+远程安装会自动附加 `--no-editable`，避免临时下载目录被清理后安装失效。
 
 交互式安装：
 
